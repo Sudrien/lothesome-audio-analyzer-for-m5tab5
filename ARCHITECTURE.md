@@ -196,3 +196,36 @@ back through landmap.h: the landscape picture comes out whole and the
 right way round. Not on a board yet. The figure to compare is the log's
 "draw", against 0005's 17-18 ms in a quiet room -- and against a run
 with music playing, which neither has had.
+
+### 0007 -- a headset on the 3.5 mm jack
+
+feckless-drivers' capture has had the jack's microphone since the
+player's 5206: `AUDIO_CAPTURE_HEADSET`, the ES7210's fourth channel,
+which only reaches the P4 in TDM -- the same TDM capture the array uses,
+so the switch is an end and a begin, not a reconfiguration of the port.
+The capture probe lines in every board log so far have shown that slot
+(3) live.
+
+The capture task now owns the source. Every 250 ms it asks
+`audio_out_headphones()`; when the answer changes it ends the capture
+and begins the other one, and publishes the choice. The drawing loop
+names it on screen, between the title and the fps, whenever it changes.
+
+Two things differ between the sources, and both are dealt with in the
+task so spectrum.h does not change:
+
+- **Channels.** The array is stereo and averaged to mono; the jack is
+  mono already, one int32 per frame.
+- **Scale.** The array arrives at 24-bit scale, the jack as 16-bit
+  values. The jack's samples are multiplied by 256 on the way into the
+  ring, so SPECTRUM_SAMPLE_FULL_SCALE (2^23) is the full scale of both
+  and dBFS means the same thing whichever is showing.
+
+The jack senses a plug, not a microphone. Plain headphones switch it to
+the jack and show an empty spectrum labelled "headset jack", which is
+what is there. If the headset capture is refused, the task goes back to
+the array and says so in the log.
+
+For a few milliseconds after a switch the 1024-sample window holds the
+end of one source and the start of the other. That is one or two frames
+of a seam, once per plug.

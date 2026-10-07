@@ -269,15 +269,78 @@ static void repaint_rows(int xs, int w, int y_top, int y_bot, int bar_top_y, int
                (size_t)r.w * sizeof(uint16_t));
 }
 
+/*
+ * 0007: where the sound comes from. The capture task owns the choice and
+ * publishes it for the drawing loop, which names it on screen.
+ *
+ *   SRC_BUILTIN  the two array microphones, stereo, 24-bit scale
+ *   SRC_JACK     a headset's microphone on the 3.5 mm jack: the ES7210's
+ *                fourth channel, mono, 16-bit values (audio_out.h)
+ *
+ * The jack is chosen whenever audio_out_headphones() says something is
+ * plugged in. That cannot tell a headset from plain headphones -- the
+ * jack detects a plug, not a microphone -- so plain headphones give an
+ * empty spectrum labelled "headset jack", which is the honest answer.
+ */
+typedef enum { SRC_BUILTIN, SRC_JACK, SRC_COUNT } source_t;
+
+static const char *const k_source_name[SRC_COUNT] = {
+    [SRC_BUILTIN] = "built-in mics",
+    [SRC_JACK]    = "headset jack",
+};
+
+#define SOURCE_POLL_US      (250000)    /* how often a plug is looked for */
+
+static volatile int s_source = SRC_BUILTIN;
+
+/* Switch the ES7210's capture between the array and the jack. On a
+ * failure, back to the array: a capture that is running beats one that
+ * is not. */
+static source_t switch_source(source_t from, source_t to)
+{
+    audio_out_capture_end();
+    const audio_capture_src_t want = (to == SRC_JACK) ? AUDIO_CAPTURE_HEADSET
+                                                      : AUDIO_CAPTURE_BUILTIN;
+    esp_err_t err = audio_out_capture_begin(want);
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "source: %s", k_source_name[to]);
+        return to;
+    }
+    ESP_LOGW(TAG, "source %s refused (%s); built-in mics", k_source_name[to],
+             esp_err_to_name(err));
+    if (audio_out_capture_begin(AUDIO_CAPTURE_BUILTIN) != ESP_OK)
+        ESP_LOGE(TAG, "built-in mics refused too; nothing to show");
+    (void)from;
+    return SRC_BUILTIN;
+}
+
 /* 0003: reads the microphones for as long as the program runs. */
 static void capture_task(void *arg)
 {
     (void)arg;
+    source_t cur = SRC_BUILTIN;         /* app_main() began the array */
+    int64_t next_poll = 0;
     for (;;) {
+        const int64_t now = esp_timer_get_time();
+        if (now >= next_poll) {
+            next_poll = now + SOURCE_POLL_US;
+            const source_t want = audio_out_headphones() ? SRC_JACK : SRC_BUILTIN;
+            if (want != cur) {
+                cur = switch_source(cur, want);
+                s_source = cur;
+            }
+        }
+
         const size_t n = audio_out_capture_read(s_frames, CAPTURE_CHUNK, 100);
         for (size_t i = 0; i < n; i++) {
-            /* MIC1 left, MIC2 right; the sketch asked M5Unified for mono. */
-            s_chunk[i] = ((float)s_frames[2 * i] + (float)s_frames[2 * i + 1]) * 0.5f;
+            if (cur == SRC_JACK) {
+                /* One frame, one int32, holding a 16-bit value: scaled up
+                 * to the 24-bit full scale spectrum.h measures against. */
+                s_chunk[i] = (float)s_frames[i] * 256.0f;
+            } else {
+                /* MIC1 left, MIC2 right; the sketch asked M5Unified for mono. */
+                s_chunk[i] = ((float)s_frames[2 * i] + (float)s_frames[2 * i + 1]) * 0.5f;
+            }
         }
         if (n) monoring_write(&s_ring, s_chunk, n);
         else   vTaskDelay(pdMS_TO_TICKS(2));
@@ -357,6 +420,15 @@ static void render(float dt, int *x0, int *x1)
     *x1 = dirty_r > dirty_l ? dirty_r : dirty_l;
 }
 
+/* 0007: which source the bars are, between the title and the fps. */
+static void draw_source(int src)
+{
+    const int x = 560, y = 14, h = ARK12_H * LABEL_SCALE, x_end = s_w - 180;
+    land_fill(x, y, x_end - x, h, COL_BLACK);
+    land_text(x, y, k_source_name[src], LABEL_SCALE, COL_LABEL);
+    land_blit(x, x_end);
+}
+
 static void draw_fps(float fps)
 {
     const int x = s_w - 170, y = 14, h = ARK12_H * LABEL_SCALE;
@@ -429,6 +501,7 @@ void app_main(void)
 
     int64_t last_us = esp_timer_get_time();
     int64_t report_us = last_us;
+    int shown_source = -1;          /* 0007: drawn on the first frame */
     uint32_t frames = 0;
     int64_t t_capture = 0, t_fft = 0, t_draw = 0;
 
@@ -450,6 +523,10 @@ void app_main(void)
         int x0, x1;
         render(dt, &x0, &x1);
         if (x1 > x0) land_blit(x0, x1);
+        if (s_source != shown_source) {
+            shown_source = s_source;
+            draw_source(shown_source);
+        }
         const int64_t t3 = esp_timer_get_time();
 
         t_capture += t1 - t0;

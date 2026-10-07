@@ -35,6 +35,13 @@ The microphones are read by a task of their own into a ring, and each
 frame takes the newest 1024 samples from it, so drawing sets the
 framerate and the window is always the latest 21.3 ms of sound.
 
+## Where the sound comes from
+
+The two built-in microphones, unless something is plugged into the
+3.5 mm jack, in which case a headset's microphone on it. The source is
+named at the top of the screen. The jack senses a plug, not a
+microphone, so plain headphones give an empty spectrum.
+
 ## The scale
 
 0 dBFS is digital full scale. It needs no calibration and is not dB SPL:
