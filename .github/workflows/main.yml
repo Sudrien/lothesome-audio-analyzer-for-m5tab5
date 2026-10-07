@@ -1,0 +1,119 @@
+name: Build and Artifact the ESP-IDF Project
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+  workflow_dispatch:
+    inputs:
+      git_ref:
+        description: 'Git tag, branch, or commit to build (e.g. v0.2.0)'
+        required: true
+        default: 'main'
+        type: string
+      # 6031: which ESP-IDF. A tag push always builds with the default;
+      # 6.1 is for trying the IDF 6 path, and its run uploads the
+      # dependencies.lock.idf6 it resolved, to be read and committed.
+      idf_version:
+        description: 'ESP-IDF to build with'
+        required: false
+        default: 'v6.1'
+        type: choice
+        options:
+          - v5.5.5
+          - v6.1
+      release:
+        description: 'Also publish a GitHub release with these binaries'
+        required: false
+        default: false
+        type: boolean
+
+# Needed to create a release. The default token is read-only on newer
+# repository settings, and the failure is a 403 at the very last step of
+# a fifteen-minute build.
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.git_ref || github.ref }}
+
+      # github.ref_name is the BRANCH on a workflow_dispatch, not the
+      # thing that was checked out -- so a manual build of v0.2.0 from
+      # the main branch produced files called ..._main.bin. The name
+      # comes from the input when there is one.
+      - name: Work out the version string
+        id: ver
+        run: echo "name=${{ github.event.inputs.git_ref || github.ref_name }}" >> "$GITHUB_OUTPUT"
+
+      # Before the firmware build, not after: this needs no ESP-IDF and
+      # takes seconds, so a layout regression should fail here rather
+      # than fifteen minutes later. It does not replace a flash -- see
+      # texttest/README.md -- it only covers arithmetic.
+      - name: Host tests (text layout, USB control handoff)
+        run: make -C texttest
+
+      - name: Install ESP-IDF
+        uses: espressif/install-esp-idf-action@v1
+        with:
+          version: ${{ github.event.inputs.idf_version || 'v6.1' }}
+          target: 'esp32p4'
+
+      - name: Build and Merge Binaries
+        run: |
+          idf.py set-target esp32p4
+          # Carry the release string into esp_app_desc_t.version so a
+          # launcher (and the About/BUILD tab) can tell one build from the
+          # next. ESP-IDF reads version.txt from the project dir; written
+          # here rather than committed so it always matches this release
+          # and local builds fall back to git describe.
+          echo "${{ steps.ver.outputs.name }}" > version.txt
+          idf.py build
+          idf.py merge-bin
+          mv build/merged-binary.bin build/lothesome_${{ steps.ver.outputs.name }}_audio_analyzer_for_m5tab5_standalone.bin
+          mv build/lothesome_audio_analyzer_for_m5tab5.bin build/lothesome_${{ steps.ver.outputs.name }}_audio_analyzer_for_m5tab5.bin
+
+      - name: Archive build output artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: lothesome_${{ steps.ver.outputs.name }}_audio_analyzer_for_m5tab5
+          path: |
+            build/lothesome_${{ steps.ver.outputs.name }}_audio_analyzer_for_m5tab5_standalone.bin
+            build/lothesome_${{ steps.ver.outputs.name }}_audio_analyzer_for_m5tab5.bin
+
+      # 6031: an IDF 6 build writes its own lock (see CMakeLists.txt) and
+      # this is the only place one gets made from the registry. Upload it
+      # so it can be read and committed; absent on a 5.x build.
+      - name: Archive the IDF 6 dependency lock
+        if: startsWith(github.event.inputs.idf_version, 'v6')
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependencies.lock.idf6-${{ steps.ver.outputs.name }}
+          path: dependencies.lock.idf6
+
+      # Two ways in, one step. Pushing a tag releases; a manual run
+      # releases only when the box is ticked, so the dispatch stays
+      # usable for a build you just want to look at.
+      #
+      # The tag has to exist for a release to hang off, which is why the
+      # manual path releases against the ref that was built rather than
+      # inventing one. Dispatching this against a branch with the box
+      # ticked will fail, and should.
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/') || inputs.release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.name }}
+          name: ${{ steps.ver.outputs.name }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            build/lothesome_${{ steps.ver.outputs.name }}_audio_analyzer_for_m5tab5_standalone.bin
+            build/lothesome_${{ steps.ver.outputs.name }}_audio_analyzer_for_m5tab5.bin
