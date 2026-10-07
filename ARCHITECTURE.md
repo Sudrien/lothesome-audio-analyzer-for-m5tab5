@@ -229,3 +229,47 @@ the array and says so in the log.
 For a few milliseconds after a switch the 1024-sample window holds the
 end of one source and the start of the other. That is one or two frames
 of a seam, once per plug.
+
+### 0008 -- a USB microphone
+
+A UAC microphone on the USB-A port, through feckless-drivers' uac.c:
+`uac_mic_open()`, `uac_mic_read()`, `uac_mic_gone()`, the path the
+player's recorder uses (its 5207). app_main() brings the port up --
+usbhost_init(), uac_init() before the port starts, as usbhost.h
+requires, then usbhost_start() -- and a failure there leaves the
+built-in mics and the jack working.
+
+The capture task prefers USB over the jack over the array. When a mic
+is announced it opens it, and only then ends the ES7210 capture; when
+the mic is reported gone it closes it and begins the ES7210 again. A
+mic the driver refuses (no 16-bit PCM alternate, say) is not retried
+until uac_generation() says something was plugged or unplugged.
+
+**The sample rate is the mic's.** uac.c takes 48 kHz if offered, else
+44.1, else the highest. spectrum.h gained spectrum_band_at() and
+spectrum_freq_x_at(), which take the rate; the bars span 80 Hz to that
+rate's Nyquist, and frequency labels above it are not drawn.
+spectrum_band() and spectrum_freq_x() are the 48 kHz case, and
+spectrumtest checks that they still are, and that the bands stay in
+order and reach Nyquist at 16, 22.05, 32, 44.1 and 48 kHz.
+
+When the source changes and the rate with it, the drawing loop rebuilds
+the bands and repaints the graph (layout_for_rate()), and every bar
+starts again from the floor. The capture task writes the rate and the
+label before the source, so the loop never sees a new source with the
+old rate.
+
+The window is still 1024 samples, so at a lower rate it is longer --
+64 ms at 16 kHz -- and the bins are narrower: 15.6 Hz instead of 46.9.
+FRAME_HOP is still 256 samples, which at 16 kHz is 16 ms, so a 16 kHz
+mic redraws at no more than about 62 fps.
+
+Samples are 16-bit, one or two channels; two are averaged, and both are
+scaled by 256 to the 24-bit full scale, as the jack's are (0007).
+
+The label is "USB <product>", with the rate added when it is not 48 kHz.
+
+The registry's usb_host_uac, not the player's vendored copy with its
+descriptor-parser fix (5026), is what this builds against. A headset
+that the player handles and this does not is the first thing to
+suspect that for.

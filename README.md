@@ -37,10 +37,18 @@ framerate and the window is always the latest 21.3 ms of sound.
 
 ## Where the sound comes from
 
-The two built-in microphones, unless something is plugged into the
-3.5 mm jack, in which case a headset's microphone on it. The source is
-named at the top of the screen. The jack senses a plug, not a
-microphone, so plain headphones give an empty spectrum.
+In order of preference:
+
+1. **A USB microphone** on the USB-A port -- a UAC headset or a USB mic.
+   It runs at its own sample rate, and the axis runs to that rate's
+   Nyquist: a 16 kHz headset shows 80 Hz to 8 kHz.
+2. **A headset on the 3.5 mm jack.**
+3. **The two built-in microphones.**
+
+The source is named at the top of the screen. The jack senses a plug,
+not a microphone, so plain headphones give an empty spectrum. Plug in
+directly: full-speed USB audio devices do not work behind a hub on the
+Tab5's port.
 
 ## The scale
 

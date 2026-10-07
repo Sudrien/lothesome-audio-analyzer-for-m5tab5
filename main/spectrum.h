@@ -106,11 +106,17 @@ typedef struct {
     int   lo_bin, hi_bin;   /* wide: the inclusive range averaged */
 } spectrum_band_t;
 
-static inline spectrum_band_t spectrum_band(int bar)
+/*
+ * 0008: at a given sample rate. A USB microphone runs at its own rate --
+ * 48 kHz if it offers it, else 44.1, else its highest (uac.h) -- and the
+ * bars span 80 Hz to that rate's Nyquist, so each bin is rate/N wide and
+ * the top of the axis moves with it. spectrum_band() is this at 48 kHz.
+ */
+static inline spectrum_band_t spectrum_band_at(int bar, float rate)
 {
-    const float hz_per_bin  = (float)SPECTRUM_SAMPLE_RATE / (float)SPECTRUM_FFT_SIZE;
+    const float hz_per_bin  = rate / (float)SPECTRUM_FFT_SIZE;
     const int   usable_bins = SPECTRUM_FFT_SIZE / 2;
-    const float ratio       = SPECTRUM_LOG_MAX_HZ / SPECTRUM_LOG_MIN_HZ;
+    const float ratio       = (rate / 2.0f) / SPECTRUM_LOG_MIN_HZ;
     const float lo_f = SPECTRUM_LOG_MIN_HZ * powf(ratio, (float)bar / SPECTRUM_BARS);
     const float hi_f = SPECTRUM_LOG_MIN_HZ * powf(ratio, (float)(bar + 1) / SPECTRUM_BARS);
     const float lo_b = lo_f / hz_per_bin;
@@ -126,6 +132,11 @@ static inline spectrum_band_t spectrum_band(int bar)
         if (b.hi_bin < b.lo_bin) b.hi_bin = b.lo_bin;
     }
     return b;
+}
+
+static inline spectrum_band_t spectrum_band(int bar)
+{
+    return spectrum_band_at(bar, (float)SPECTRUM_SAMPLE_RATE);
 }
 
 /* One bar's magnitude from the FFT's magnitudes (`mag`, at least
@@ -156,12 +167,17 @@ static inline float spectrum_frac(float dbfs)
 }
 
 /* Where a log-axis frequency falls across `width` pixels. */
+static inline int spectrum_freq_x_at(float hz, int width, float max_hz)
+{
+    hz = spectrum_clampf(hz, SPECTRUM_LOG_MIN_HZ, max_hz);
+    const float t = logf(hz / SPECTRUM_LOG_MIN_HZ) /
+                    logf(max_hz / SPECTRUM_LOG_MIN_HZ);
+    return (int)(t * (float)width);
+}
+
 static inline int spectrum_freq_x(float hz, int width)
 {
-    hz = spectrum_clampf(hz, SPECTRUM_LOG_MIN_HZ, SPECTRUM_LOG_MAX_HZ);
-    const float t = logf(hz / SPECTRUM_LOG_MIN_HZ) /
-                    logf(SPECTRUM_LOG_MAX_HZ / SPECTRUM_LOG_MIN_HZ);
-    return (int)(t * (float)width);
+    return spectrum_freq_x_at(hz, width, SPECTRUM_LOG_MAX_HZ);
 }
 
 /*

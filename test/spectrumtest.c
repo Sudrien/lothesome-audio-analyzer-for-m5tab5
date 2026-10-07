@@ -188,8 +188,33 @@ static void test_landmap(void)
     CHECK(y0 == 0 && y1 == LW, "whole width is not every panel row");
 }
 
+/* 0008: other sample rates. The bars still cover 80 Hz to Nyquist, in
+ * order, and a tone still reads its level wherever it lands. */
+static void test_rates(void)
+{
+    const float rates[] = { 16000.0f, 22050.0f, 32000.0f, 44100.0f, 48000.0f };
+    for (size_t r = 0; r < sizeof(rates) / sizeof(rates[0]); r++) {
+        int prev_hi = 0, ok = 1;
+        for (int b = 0; b < SPECTRUM_BARS; b++) {
+            const spectrum_band_t s = spectrum_band_at(b, rates[r]);
+            if (!s.narrow) { ok &= s.lo_bin >= 1 && s.hi_bin >= s.lo_bin &&
+                                   s.hi_bin <= N / 2 - 1 && s.hi_bin >= prev_hi;
+                             prev_hi = s.hi_bin; }
+        }
+        CHECK(ok, "bands out of order at %.0f Hz", rates[r]);
+        const spectrum_band_t top = spectrum_band_at(SPECTRUM_BARS - 1, rates[r]);
+        CHECK(!top.narrow && top.hi_bin == N / 2 - 1, "top bar short of Nyquist at %.0f", rates[r]);
+        CHECK(spectrum_freq_x_at(rates[r] / 2, 1000, rates[r] / 2) == 1000,
+              "Nyquist not at the right at %.0f", rates[r]);
+    }
+    const spectrum_band_t a = spectrum_band(10), b = spectrum_band_at(10, 48000.0f);
+    CHECK(a.narrow == b.narrow && a.lo_bin == b.lo_bin && a.hi_bin == b.hi_bin &&
+          a.centre_bin == b.centre_bin, "spectrum_band() is not the 48 kHz case");
+}
+
 int main(void)
 {
+    test_rates();
     test_landmap();
     test_ring();
     test_scale();

@@ -42,6 +42,8 @@
 #include "gfx.h"
 #include "lcd.h"
 #include "tab5io.h"
+#include "uac.h"          /* 0008 */
+#include "usbhost.h"      /* 0008 */
 #include "ark12.h"        /* 0006: glyphs, drawn turned */
 
 #include "landmap.h"      /* 0006 */
@@ -110,6 +112,7 @@ static float   s_mag[SPECTRUM_FFT_SIZE / 2];
 /* ---- layout ---- */
 static int s_w, s_h;
 static int s_left, s_right, s_top, s_bottom, s_graph_w, s_graph_h, s_bar_w;
+static float s_max_hz = SPECTRUM_LOG_MAX_HZ;    /* 0008: the source's Nyquist */
 
 /* The colour of each row, by height above the baseline, and whether a
  * dB gridline sits there. By row, never by level: see spectrum_row_rg(). */
@@ -229,10 +232,10 @@ static void draw_static(void)
     static const float label_hz[] = { 80, 100, 500, 1000, 5000, 10000, 20000 };
     for (size_t i = 0; i < sizeof(label_hz) / sizeof(label_hz[0]); i++) {
         const float f = label_hz[i];
-        if (f < SPECTRUM_LOG_MIN_HZ || f > SPECTRUM_LOG_MAX_HZ) continue;
+        if (f < SPECTRUM_LOG_MIN_HZ || f > s_max_hz) continue;
         char buf[8];
         freq_label(f, buf, sizeof(buf));
-        int x = spectrum_freq_x(f, s_graph_w);
+        int x = spectrum_freq_x_at(f, s_graph_w, s_max_hz);
         if (x > s_graph_w - 60) x = s_graph_w - 60;
         if (x < 0) x = 0;
         land_text(s_left + x, s_bottom + 10, buf, LABEL_SCALE, COL_LABEL);
@@ -282,12 +285,26 @@ static void repaint_rows(int xs, int w, int y_top, int y_bot, int bar_top_y, int
  * jack detects a plug, not a microphone -- so plain headphones give an
  * empty spectrum labelled "headset jack", which is the honest answer.
  */
-typedef enum { SRC_BUILTIN, SRC_JACK, SRC_COUNT } source_t;
+typedef enum { SRC_BUILTIN, SRC_JACK, SRC_USB, SRC_COUNT } source_t;
 
 static const char *const k_source_name[SRC_COUNT] = {
     [SRC_BUILTIN] = "built-in mics",
     [SRC_JACK]    = "headset jack",
+    [SRC_USB]     = "USB",
 };
+
+/*
+ * 0008: a USB microphone -- a UAC headset or a USB mic on the USB-A port
+ * -- is preferred over both of the above whenever one is announced. It
+ * runs at its own rate (uac.h: 48 kHz if offered, else 44.1, else its
+ * highest), which the drawing loop rebuilds the bars for. s_rate and
+ * s_usb_label are written by the capture task BEFORE s_source, so a
+ * reader that sees the new source sees them too.
+ */
+static volatile uint32_t s_rate = SPECTRUM_SAMPLE_RATE;
+static char s_usb_label[48];
+static uint8_t s_usb_channels;
+static uint32_t s_usb_refused_gen = UINT32_MAX;   /* uac_generation() at a refusal */
 
 #define SOURCE_POLL_US      (250000)    /* how often a plug is looked for */
 
@@ -295,7 +312,8 @@ static volatile int s_source = SRC_BUILTIN;
 
 /* Switch the ES7210's capture between the array and the jack. On a
  * failure, back to the array: a capture that is running beats one that
- * is not. */
+ * is not. 0008: also the way back from USB, when nothing is capturing
+ * on the ES7210 and the end is a no-op. */
 static source_t switch_source(source_t from, source_t to)
 {
     audio_out_capture_end();
@@ -324,11 +342,58 @@ static void capture_task(void *arg)
         const int64_t now = esp_timer_get_time();
         if (now >= next_poll) {
             next_poll = now + SOURCE_POLL_US;
-            const source_t want = audio_out_headphones() ? SRC_JACK : SRC_BUILTIN;
-            if (want != cur) {
-                cur = switch_source(cur, want);
+            const source_t es7210 = audio_out_headphones() ? SRC_JACK : SRC_BUILTIN;
+            source_t next = cur;
+
+            if (cur == SRC_USB) {
+                if (uac_mic_gone()) {
+                    uac_mic_close();
+                    ESP_LOGI(TAG, "USB microphone unplugged");
+                    s_rate = SPECTRUM_SAMPLE_RATE;
+                    next = switch_source(cur, es7210);
+                }
+            } else if (uac_mic_announced() && uac_generation() != s_usb_refused_gen) {
+                uint32_t rate = 0;
+                uint8_t ch = 0;
+                const esp_err_t err = uac_mic_open(&rate, &ch);
+                if (err == ESP_OK) {
+                    audio_out_capture_end();        /* the ES7210 is not wanted */
+                    s_usb_channels = ch;
+                    if (rate == SPECTRUM_SAMPLE_RATE)
+                        snprintf(s_usb_label, sizeof(s_usb_label), "USB %.30s", uac_mic_product());
+                    else
+                        snprintf(s_usb_label, sizeof(s_usb_label), "USB %.24s, %u kHz",
+                                 uac_mic_product(), (unsigned)(rate / 1000));
+                    s_rate = rate;
+                    next = SRC_USB;
+                    ESP_LOGI(TAG, "source: USB microphone \"%s\", %u Hz, %u ch",
+                             uac_mic_product(), (unsigned)rate, (unsigned)ch);
+                } else {
+                    s_usb_refused_gen = uac_generation();
+                    ESP_LOGW(TAG, "USB microphone refused: %s", esp_err_to_name(err));
+                }
+            } else if (es7210 != cur) {
+                next = switch_source(cur, es7210);
+            }
+
+            if (next != cur) {
+                cur = next;
                 s_source = cur;
             }
+        }
+
+        if (cur == SRC_USB) {
+            const size_t n = uac_mic_read(s_frames, CAPTURE_CHUNK, 100);
+            const int ch = s_usb_channels == 2 ? 2 : 1;
+            for (size_t i = 0; i < n; i++) {
+                /* 16-bit values, one or two channels: to mono at 24-bit scale. */
+                const float v = ch == 2 ? ((float)s_frames[2 * i] + (float)s_frames[2 * i + 1]) * 0.5f
+                                        : (float)s_frames[i];
+                s_chunk[i] = v * 256.0f;
+            }
+            if (n) monoring_write(&s_ring, s_chunk, n);
+            else   vTaskDelay(pdMS_TO_TICKS(2));
+            continue;
         }
 
         const size_t n = audio_out_capture_read(s_frames, CAPTURE_CHUNK, 100);
@@ -425,8 +490,23 @@ static void draw_source(int src)
 {
     const int x = 560, y = 14, h = ARK12_H * LABEL_SCALE, x_end = s_w - 180;
     land_fill(x, y, x_end - x, h, COL_BLACK);
-    land_text(x, y, k_source_name[src], LABEL_SCALE, COL_LABEL);
+    land_text(x, y, src == SRC_USB ? s_usb_label : k_source_name[src], LABEL_SCALE, COL_LABEL);
     land_blit(x, x_end);
+}
+
+/* 0008: the bars for a sample rate -- bands, the axis's top, a cleared
+ * graph with its labels -- and every bar back at the floor, since the
+ * graph under them has just been repainted. */
+static void layout_for_rate(uint32_t rate)
+{
+    s_max_hz = (float)rate / 2.0f;
+    for (int b = 0; b < SPECTRUM_BARS; b++) {
+        s_band[b] = spectrum_band_at(b, (float)rate);
+        s_level[b] = s_peak[b] = 0.0f;
+        s_prev_h[b] = 0;
+        s_prev_peak_y[b] = s_bottom;
+    }
+    draw_static();
 }
 
 static void draw_fps(float fps)
@@ -467,6 +547,19 @@ void app_main(void)
      * up too, at the capture rate, and plays nothing. */
     ESP_ERROR_CHECK(audio_out_init(tab5io_bus(), tab5io_exp1(), SPECTRUM_SAMPLE_RATE));
     ESP_ERROR_CHECK(audio_out_capture_begin(AUDIO_CAPTURE_BUILTIN));
+
+    /*
+     * 0008: the USB-A port, for a USB microphone. Not fatal: without it
+     * the built-in mics and the jack still work. The UAC class driver is
+     * registered before the port comes up, as usbhost.h requires, and
+     * usbhost_start() powers the port on its own bus task.
+     */
+    if (usbhost_init(tab5io_exp2()) == ESP_OK && uac_init() == ESP_OK) {
+        usbhost_start();
+    } else {
+        ESP_LOGW(TAG, "no USB host; USB microphones will not be seen");
+    }
+
     if (xTaskCreatePinnedToCore(capture_task, "capture", CAPTURE_STACK, NULL,
                                 CAPTURE_PRIO, NULL, CAPTURE_CORE) != pdPASS) {
         ESP_LOGE(TAG, "no capture task");
@@ -489,12 +582,7 @@ void app_main(void)
     s_bottom = s_top + s_graph_h;
     s_bar_w = s_graph_w / SPECTRUM_BARS;
 
-    for (int b = 0; b < SPECTRUM_BARS; b++) {
-        s_band[b] = spectrum_band(b);
-        s_prev_peak_y[b] = s_bottom;
-    }
-
-    draw_static();
+    layout_for_rate(SPECTRUM_SAMPLE_RATE);     /* 0008: was the bands and draw_static() */
     ESP_ERROR_CHECK(lcd_backlight_set(ANALYZER_BACKLIGHT));
     ESP_LOGI(TAG, "%dx%d, graph %dx%d, %d bars of %d px", s_w, s_h,
              s_graph_w, s_graph_h, SPECTRUM_BARS, s_bar_w);
@@ -502,6 +590,7 @@ void app_main(void)
     int64_t last_us = esp_timer_get_time();
     int64_t report_us = last_us;
     int shown_source = -1;          /* 0007: drawn on the first frame */
+    uint32_t shown_rate = SPECTRUM_SAMPLE_RATE;    /* 0008 */
     uint32_t frames = 0;
     int64_t t_capture = 0, t_fft = 0, t_draw = 0;
 
@@ -525,6 +614,11 @@ void app_main(void)
         if (x1 > x0) land_blit(x0, x1);
         if (s_source != shown_source) {
             shown_source = s_source;
+            /* 0008: a USB microphone's rate, published before its source. */
+            if (s_rate != shown_rate) {
+                shown_rate = s_rate;
+                layout_for_rate(shown_rate);
+            }
             draw_source(shown_source);
         }
         const int64_t t3 = esp_timer_get_time();
