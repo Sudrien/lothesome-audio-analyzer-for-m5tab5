@@ -56,9 +56,9 @@ jobs:
       # Before the firmware build, not after: this needs no ESP-IDF and
       # takes seconds, so a layout regression should fail here rather
       # than fifteen minutes later. It does not replace a flash -- see
-      # texttest/README.md -- it only covers arithmetic.
+      # test/README.md -- it only covers arithmetic.
       - name: Host tests (text layout, USB control handoff)
-        run: make -C texttest
+        run: make -C test
 
       - name: Install ESP-IDF
         uses: espressif/install-esp-idf-action@v1
