@@ -30,6 +30,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "esp_app_desc.h"
 #include "esp_dsp.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -301,6 +302,21 @@ static void draw_fps(float fps)
 
 void app_main(void)
 {
+    /*
+     * 0005: the line to start copying from, as the player has it.
+     * Everything above is the ROM, the bootloader and IDF's startup;
+     * everything below is this program. The version is here because a
+     * log that cannot be matched to a tree cannot be decoded against it.
+     * ESP_LOGW so it survives a build with the info level turned down,
+     * and first, so a failure in the very first init is still below it.
+     */
+    {
+        const esp_app_desc_t *d = esp_app_get_description();
+        ESP_LOGW(TAG, "=== Lothesome Audio Analyzer === %s, IDF %s, built %s %s",
+                 d ? d->version : "?", d ? d->idf_ver : "?",
+                 d ? d->date : "?", d ? d->time : "?");
+    }
+
     /* The bus and the expanders first: LCD_RST and the codecs are on them. */
     ESP_ERROR_CHECK(tab5io_init());
 

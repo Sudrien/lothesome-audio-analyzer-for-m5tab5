@@ -138,3 +138,20 @@ microphones only start differentiating frequencies at about 80 Hz, so
 the bars below it spent a sixth of the width on nothing resolvable. The
 64 bars now span 80 Hz to 24 kHz, about 9.3% each instead of 10%, and
 the first frequency label is 80 rather than 50. No other number moved.
+
+### 0005 -- the boot banner
+
+The first line app_main() prints, as the player's does:
+
+    W (...) analyzer: === Lothesome Audio Analyzer === <version>, IDF <ver>, built <date> <time>
+
+Everything above it in a log is the ROM, the bootloader and IDF's own
+startup; everything below is this program, so it is the line to start
+copying from. The version is `git describe` of the tree that was built,
+with -dirty when it had changes, which is what matches a log to the
+source a backtrace has to be decoded against. ESP_LOGW so it survives a
+build with the info level turned down.
+
+The player also lists, under its banner, any sdkconfig.defaults key the
+build's sdkconfig disagrees with (its cmake/defaults_check.cmake). Not
+here yet.
