@@ -29,7 +29,14 @@ extern "C" {
 #define SPECTRUM_BARS          (64)
 
 /* ---- Frequency axis ---- */
-#define SPECTRUM_LOG_MIN_HZ    (50.0f)
+/*
+ * 0004: 80 Hz, not the sketch's 50. The array microphones only start
+ * telling frequencies apart at about 80 Hz, so bars below it showed
+ * nothing the hardware can resolve; the axis starts where it does.
+ *
+ * src: observed on the board, not a datasheet figure.
+ */
+#define SPECTRUM_LOG_MIN_HZ    (80.0f)
 #define SPECTRUM_LOG_MAX_HZ    ((float)SPECTRUM_SAMPLE_RATE / 2.0f)
 
 /* ---- Level, in dBFS ----

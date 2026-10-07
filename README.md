@@ -2,7 +2,7 @@
 
 The M5Stack Tab5's two built-in microphones as a live spectrum: 1024
 samples at 48 kHz, Hamming-windowed, an FFT, and 64 log-spaced bars from
-50 Hz to 24 kHz on a dBFS scale, with peak markers. Only the rows that
+80 Hz to 24 kHz on a dBFS scale, with peak markers. Only the rows that
 changed are redrawn each frame.
 
 A C port of the Arduino sketch in

@@ -130,3 +130,11 @@ it. spectrumtest checks the copy across the ring's wrap and the count's.
 Expected on the board: framerate unchanged (still draw-bound, ~28),
 "capture" near zero, and a pure tone narrower than before. The
 landscape draw cost is the next patch's business.
+
+### 0004 -- the axis starts at 80 Hz
+
+`SPECTRUM_LOG_MIN_HZ` is 80, not the sketch's 50: on the board the array
+microphones only start differentiating frequencies at about 80 Hz, so
+the bars below it spent a sixth of the width on nothing resolvable. The
+64 bars now span 80 Hz to 24 kHz, about 9.3% each instead of 10%, and
+the first frequency label is 80 rather than 50. No other number moved.

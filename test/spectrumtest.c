@@ -82,8 +82,8 @@ static void test_bands(void)
             prev_hi = s.hi_bin;
         }
     }
-    /* 50 Hz to 24 kHz in 64 log steps is ~10% a bar; a bin is 46.9 Hz,
-     * so bars stay narrower than a bin up to ~470 Hz. */
+    /* 80 Hz to 24 kHz in 64 log steps is ~9.3% a bar; a bin is 46.9 Hz,
+     * so bars stay narrower than a bin up to ~500 Hz. */
     CHECK(narrow > 0 && narrow < SPECTRUM_BARS / 2, "%d narrow bars", narrow);
     const spectrum_band_t last = spectrum_band(SPECTRUM_BARS - 1);
     CHECK(!last.narrow && last.hi_bin == N / 2 - 1, "top bar does not reach Nyquist");

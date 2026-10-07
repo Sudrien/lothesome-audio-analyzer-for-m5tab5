@@ -169,7 +169,7 @@ static void draw_static(void)
     gfx_draw_text(10, s_top - label_h - 4, "dBFS", LABEL_SCALE, 200, COL_LABEL);
 
     /* Frequency labels along the log axis. */
-    static const float label_hz[] = { 50, 100, 500, 1000, 5000, 10000, 20000 };
+    static const float label_hz[] = { 80, 100, 500, 1000, 5000, 10000, 20000 };
     for (size_t i = 0; i < sizeof(label_hz) / sizeof(label_hz[0]); i++) {
         const float f = label_hz[i];
         if (f < SPECTRUM_LOG_MIN_HZ || f > SPECTRUM_LOG_MAX_HZ) continue;
