@@ -289,3 +289,23 @@ harness is not committed: it leans on the player's texttest stubs and
 on stub headers written for the occasion, and is more scaffolding than
 it is worth keeping. A photo of the board is the better picture, when
 there is one.
+
+### 0010 -- the right headset slot, and the program's own name
+
+The first board run with a headset found two things.
+
+**The headset was a slot of silence, and the array half the array.**
+Not a wrong slot number here: the capture channel is an I2S slave on
+clocks already running, and when it is enabled it can start anywhere in
+the four-slot frame. The probe showed slot 0's silence at position 0 on
+boot, then at 1 after the USB mic came out, then at 3 after the jack
+went in. feckless-drivers v0.3.0 finds that silent slot at each capture
+begin and takes every slot relative to it (its patch 0005); this patch
+asks for v0.3.0. The cost is about 150 ms after each source switch
+before samples arrive, which the drawing loop already waits out.
+
+**The title said "Tab5 Spectrum Analyzer"**, the sketch's. It is
+"Lothesome Audio Analyzer" now, and docs/mockup.png is redrawn with it.
+
+And one cosmetic: USB product strings come space-padded ("C-Media USB
+Headphone Set  "), so the label and the log line trim them.

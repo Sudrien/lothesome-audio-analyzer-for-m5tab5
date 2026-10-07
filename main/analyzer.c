@@ -199,7 +199,7 @@ static uint16_t s_line[LAND_H];
 static void draw_static(void)
 {
     land_fill(0, 0, s_w, s_h, COL_BLACK);
-    land_text(10, 4, "Tab5 Spectrum Analyzer", TITLE_SCALE, COL_WHITE);
+    land_text(10, 4, "Lothesome Audio Analyzer", TITLE_SCALE, COL_WHITE);
 
     for (int h = 0; h <= s_graph_h; h++) {
         int r, g;
@@ -359,15 +359,21 @@ static void capture_task(void *arg)
                 if (err == ESP_OK) {
                     audio_out_capture_end();        /* the ES7210 is not wanted */
                     s_usb_channels = ch;
+                    /* 0010: product strings arrive space-padded ("C-Media
+                     * USB Headphone Set  "), which the label does not want. */
+                    char product[40];
+                    snprintf(product, sizeof(product), "%s", uac_mic_product());
+                    for (size_t len = strlen(product); len && product[len - 1] == ' '; )
+                        product[--len] = '\0';
                     if (rate == SPECTRUM_SAMPLE_RATE)
-                        snprintf(s_usb_label, sizeof(s_usb_label), "USB %.30s", uac_mic_product());
+                        snprintf(s_usb_label, sizeof(s_usb_label), "USB %.30s", product);
                     else
                         snprintf(s_usb_label, sizeof(s_usb_label), "USB %.24s, %u kHz",
-                                 uac_mic_product(), (unsigned)(rate / 1000));
+                                 product, (unsigned)(rate / 1000));
                     s_rate = rate;
                     next = SRC_USB;
                     ESP_LOGI(TAG, "source: USB microphone \"%s\", %u Hz, %u ch",
-                             uac_mic_product(), (unsigned)rate, (unsigned)ch);
+                             product, (unsigned)rate, (unsigned)ch);
                 } else {
                     s_usb_refused_gen = uac_generation();
                     ESP_LOGW(TAG, "USB microphone refused: %s", esp_err_to_name(err));
