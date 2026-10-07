@@ -1,0 +1,24 @@
+dependencies:
+  idf:
+    version: ">=5.4.2"
+
+  # The board, the microphones and the panel, from the libraries pulled
+  # out of defeatist-music-player-for-m5tab5. PINNED TO TAGS: a moving
+  # branch would change underneath a build that worked.
+  feckless_drivers:
+    git: https://github.com/Sudrien/feckless-drivers-for-tab5.git
+    version: "v0.2.0"
+  feckless_graphics_handler:
+    git: https://github.com/Sudrien/feckless-graphics-handler-for-tab5.git
+    version: "v0.1.0"
+
+  # feckless-drivers requires the USB audio class driver by name and does
+  # not fetch it (the player vendors a fixed copy). This program never
+  # opens a USB device, but audio_out.c links uac.c, so it has to be
+  # here. 1.5.0 is the release the player's copy started from.
+  espressif/usb_host_uac: "^1.5.0"
+
+  # The FFT. Replaces arduinoFFT. Optimised for the P4 (dsps_fft2r_fc32
+  # picks the arp4 assembly when it can). Its windows do not include
+  # Hamming, so analyzer.c computes that one itself.
+  espressif/esp-dsp: "^1.8.0"

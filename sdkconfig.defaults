@@ -1,0 +1,28 @@
+# The analyzer's configuration. Each line is one the player
+# (defeatist-music-player-for-m5tab5) sets for the same reason; its
+# sdkconfig.defaults has the full argument for each.
+#
+# sdkconfig.defaults only fills keys an existing sdkconfig lacks, so a
+# change here needs `rm sdkconfig` before the next build.
+
+CONFIG_IDF_TARGET="esp32p4"
+# Tab5 silicon is ESP32-P4 rev v1.3. Without this the build targets rev
+# v3.1+ and esptool refuses to flash.
+CONFIG_ESP32P4_SELECTS_REV_LESS_V3=y
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+
+# The 1.8 MB shadow framebuffer lives in PSRAM; without it gfx_init()
+# fails and the screen stays dark.
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_SPEED_200M=y
+CONFIG_IDF_EXPERIMENTAL_FEATURES=y
+CONFIG_CACHE_L2_CACHE_256KB=y
+CONFIG_CACHE_L2_CACHE_LINE_128B=y
+
+CONFIG_COMPILER_OPTIMIZATION_PERF=y
+CONFIG_FREERTOS_HZ=1000
+
+# The Ark12 font table is large; the default 1 MB app partition is not.
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
