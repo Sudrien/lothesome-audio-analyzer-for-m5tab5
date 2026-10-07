@@ -31,8 +31,9 @@ Rev 2 Tabs (ST7121 panel) only; see feckless-graphics-handler.
 Once a second the log prints the framerate and where each frame's time
 went, as `FPS: ... | capture ...ms  fft ...ms  draw ...ms`.
 
-Capture sets the ceiling: 1024 samples at 48 kHz take 21.3 ms to arrive,
-so about 47 frames a second is the most there can be.
+The microphones are read by a task of their own into a ring, and each
+frame takes the newest 1024 samples from it, so drawing sets the
+framerate and the window is always the latest 21.3 ms of sound.
 
 ## The scale
 

@@ -95,3 +95,38 @@ things most likely to need a second look:
   `rm sdkconfig`) takes the plain-C path and settles which it is.
 - **The rotation**, above.
 - **`draw` time in landscape**, above.
+
+### 0003 -- capture in a task of its own, into a ring
+
+The first board run of 0002 answered the three open questions. esp-dsp's
+P4 FFT runs on silicon v1.3, 0.5 ms a frame. `GFX_ROT_270` is an
+acceptable way up. And draw is 25-44 ms a frame, about 28 fps against a
+47 fps capture ceiling: the landscape transpose, as predicted.
+
+The same log showed a second problem: "capture 4 ms". Reading 1024 frames
+at 48 kHz cannot take 4 ms unless most of them were already waiting --
+and the only thing they wait in is the I2S DMA, 8 x 120 frames, 20 ms.
+During a 30 ms draw it wrapped. So each window was whatever survived in
+the DMA spliced to what came after: a discontinuity inside every FFT,
+which smears a tone's energy into its neighbours. It did not make the
+display lag -- the DMA is too small to fall behind by more than 20 ms --
+it made it wrong.
+
+A capture task now reads one DMA buffer (120 frames) at a time, for as
+long as the program runs, averages to mono and appends to `monoring.h`'s
+4096-sample ring. It is pinned to core 1 at priority 5, so no draw on
+core 0 can hold it up. The drawing loop copies out the newest 1024
+samples once at least 256 new ones have arrived (FRAME_HOP, 5.3 ms) and
+draws them. The window is always contiguous and always current; frames
+overlap when drawing is fast; the framerate is now set by drawing alone.
+
+The log's "capture" figure now means the wait for FRAME_HOP new samples,
+not the read, so it reads near zero while drawing is the slow part.
+
+`monoring.h` is one writer, one reader, no lock: the writer publishes
+its count with a release store after the samples, the reader acquires
+it. spectrumtest checks the copy across the ring's wrap and the count's.
+
+Expected on the board: framerate unchanged (still draw-bound, ~28),
+"capture" near zero, and a pure tone narrower than before. The
+landscape draw cost is the next patch's business.

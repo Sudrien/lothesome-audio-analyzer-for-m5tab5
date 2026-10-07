@@ -41,6 +41,7 @@
 #include "lcd.h"
 #include "tab5io.h"
 
+#include "monoring.h"     /* 0003 */
 #include "spectrum.h"
 
 static const char *TAG = "analyzer";
@@ -78,7 +79,26 @@ static const char *TAG = "analyzer";
 #define MAX_GRAPH_H         (800)   /* bound for the row tables */
 
 /* ---- capture and FFT buffers: static, never on the task's stack ---- */
-static int32_t s_frames[SPECTRUM_FFT_SIZE * 2];             /* capture, stereo */
+
+/*
+ * 0003: the capture task's side. It reads CAPTURE_CHUNK stereo frames at
+ * a time -- one DMA buffer's worth (feckless-drivers' CAPTURE_DMA_FRAMES)
+ * -- averages them to mono and appends them to s_ring. See monoring.h
+ * for why this is a task of its own.
+ */
+#define CAPTURE_CHUNK       (120)
+#define CAPTURE_STACK       (4096)
+#define CAPTURE_PRIO        (5)     /* above app_main's 1: it must never wait on a draw */
+#define CAPTURE_CORE        (1)     /* app_main runs on 0 */
+
+/* Fresh samples a frame waits for before redrawing, so a fast draw does
+ * not repaint the same audio. 256 is 5.3 ms at 48 kHz. */
+#define FRAME_HOP           (256)
+
+static int32_t    s_frames[CAPTURE_CHUNK * 2];              /* capture, stereo */
+static float      s_chunk[CAPTURE_CHUNK];                   /* the same, mono */
+static monoring_t s_ring;
+static float      s_mono[SPECTRUM_FFT_SIZE];                /* the window, oldest first */
 static float   s_window[SPECTRUM_FFT_SIZE];
 static float   s_fft[SPECTRUM_FFT_SIZE * 2] __attribute__((aligned(16)));  /* re, im */
 static float   s_mag[SPECTRUM_FFT_SIZE / 2];
@@ -181,21 +201,37 @@ static void repaint_rows(int xs, int w, int y_top, int y_bot, int bar_top_y, int
     }
 }
 
-/* Fill s_fft with one window's worth of mono samples. Returns false if
- * the capture stopped delivering. */
+/* 0003: reads the microphones for as long as the program runs. */
+static void capture_task(void *arg)
+{
+    (void)arg;
+    for (;;) {
+        const size_t n = audio_out_capture_read(s_frames, CAPTURE_CHUNK, 100);
+        for (size_t i = 0; i < n; i++) {
+            /* MIC1 left, MIC2 right; the sketch asked M5Unified for mono. */
+            s_chunk[i] = ((float)s_frames[2 * i] + (float)s_frames[2 * i + 1]) * 0.5f;
+        }
+        if (n) monoring_write(&s_ring, s_chunk, n);
+        else   vTaskDelay(pdMS_TO_TICKS(2));
+    }
+}
+
+/* Fill s_fft with the newest window of mono samples, once at least
+ * FRAME_HOP have arrived since the last one. Returns false if none have
+ * for a while, which is a capture that stopped delivering. */
 static bool capture(void)
 {
-    size_t got = 0;
-    while (got < SPECTRUM_FFT_SIZE) {
-        const size_t n = audio_out_capture_read(s_frames + got * 2,
-                                                SPECTRUM_FFT_SIZE - got, 100);
-        if (n == 0) return false;
-        got += n;
+    static uint32_t s_last;
+    uint32_t end = monoring_count(&s_ring);
+    for (int waited = 0; end < SPECTRUM_FFT_SIZE || end - s_last < FRAME_HOP; waited++) {
+        if (waited > 100) return false;     /* ~100 ms with nothing new */
+        vTaskDelay(pdMS_TO_TICKS(1));
+        end = monoring_count(&s_ring);
     }
+    s_last = end;
+    monoring_newest(&s_ring, end, s_mono, SPECTRUM_FFT_SIZE);
     for (int i = 0; i < SPECTRUM_FFT_SIZE; i++) {
-        /* MIC1 left, MIC2 right; the sketch asked M5Unified for mono. */
-        const float mono = ((float)s_frames[2 * i] + (float)s_frames[2 * i + 1]) * 0.5f;
-        s_fft[2 * i]     = mono * s_window[i];
+        s_fft[2 * i]     = s_mono[i] * s_window[i];
         s_fft[2 * i + 1] = 0.0f;
     }
     return true;
@@ -277,6 +313,11 @@ void app_main(void)
      * up too, at the capture rate, and plays nothing. */
     ESP_ERROR_CHECK(audio_out_init(tab5io_bus(), tab5io_exp1(), SPECTRUM_SAMPLE_RATE));
     ESP_ERROR_CHECK(audio_out_capture_begin(AUDIO_CAPTURE_BUILTIN));
+    if (xTaskCreatePinnedToCore(capture_task, "capture", CAPTURE_STACK, NULL,
+                                CAPTURE_PRIO, NULL, CAPTURE_CORE) != pdPASS) {
+        ESP_LOGE(TAG, "no capture task");
+        return;
+    }
 
     ESP_ERROR_CHECK(dsps_fft2r_init_fc32(NULL, SPECTRUM_FFT_SIZE));
     for (int i = 0; i < SPECTRUM_FFT_SIZE; i++)

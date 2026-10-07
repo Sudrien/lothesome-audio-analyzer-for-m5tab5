@@ -10,9 +10,11 @@
  */
 #define _GNU_SOURCE
 #include <math.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "monoring.h"
 #include "spectrum.h"
 
 static int checks, failures;
@@ -127,8 +129,38 @@ static void test_axes(void)
     spectrum_row_rg(1.0f, &r, &g);  CHECK(r == 255 && g == 0, "top not red");
 }
 
+/* 0003: the newest window comes out contiguous and in order, across the
+ * wrap and across the 2^32 wrap of the count. */
+static void test_ring(void)
+{
+    static monoring_t r;
+    static float out[N], chunk[120];
+    float next = 0.0f;
+    for (int round = 0; round < 200; round++) {
+        for (int i = 0; i < 120; i++) chunk[i] = next++;
+        monoring_write(&r, chunk, 120);
+        const uint32_t end = monoring_count(&r);
+        if (end < N) continue;
+        monoring_newest(&r, end, out, N);
+        int ok = 1;
+        for (int i = 0; i < N; i++) ok &= out[i] == next - N + i;
+        CHECK(ok, "window wrong after %u samples", (unsigned)end);
+    }
+    r.count = UINT32_MAX - 50;          /* about to wrap the count */
+    next = 0.0f;
+    for (int round = 0; round < 20; round++) {
+        for (int i = 0; i < 120; i++) chunk[i] = next++;
+        monoring_write(&r, chunk, 120);
+    }
+    monoring_newest(&r, monoring_count(&r), out, N);
+    int ok = 1;
+    for (int i = 0; i < N; i++) ok &= out[i] == next - N + i;
+    CHECK(ok, "window wrong across the count's wrap");
+}
+
 int main(void)
 {
+    test_ring();
     test_scale();
     test_bands();
     test_ballistics();

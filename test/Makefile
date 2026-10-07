@@ -13,7 +13,7 @@ LDFLAGS := -fsanitize=address,undefined -lm
 
 all: run
 
-spectrumtest: spectrumtest.c ../main/spectrum.h
+spectrumtest: spectrumtest.c ../main/spectrum.h ../main/monoring.h
 	$(CC) $(CFLAGS) -o $@ spectrumtest.c $(LDFLAGS)
 
 run: spectrumtest
