@@ -14,6 +14,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "landmap.h"
 #include "monoring.h"
 #include "spectrum.h"
 
@@ -158,8 +159,38 @@ static void test_ring(void)
     CHECK(ok, "window wrong across the count's wrap");
 }
 
+/* 0006: landmap.h's forward map against the inverse gfx's 270 gather
+ * uses (feckless-graphics-handler gather_rotated(): ly = px,
+ * lx = s_w - 1 - py), for every pixel of the landscape. */
+static void test_landmap(void)
+{
+    enum { LW = 1280, LH = 720 };
+    int ok = 1;
+    for (int ly = 0; ly < LH && ok; ly++)
+        for (int lx = 0; lx < LW && ok; lx++) {
+            const int px = landmap_px(lx, ly, LW), py = landmap_py(lx, ly, LW);
+            ok = px >= 0 && px < LH && py >= 0 && py < LW &&
+                 py == (LW - 1) - lx && px == ly;        /* inverse: ly=px, lx=LW-1-py */
+            ok = ok && (LW - 1 - py) == lx && px == ly;
+        }
+    CHECK(ok, "landmap_px/py is not gfx's 270");
+
+    /* A rectangle maps to the rectangle its corners map to. */
+    const landmap_rect_t r = landmap_rect(100, 70, 16, 604, LW);
+    CHECK(r.x == 70 && r.w == 604, "rect x/w %d/%d", r.x, r.w);
+    CHECK(r.y == landmap_py(115, 70, LW) && r.y + r.h - 1 == landmap_py(100, 70, LW),
+          "rect rows %d..%d", r.y, r.y + r.h - 1);
+
+    int y0, y1;
+    landmap_rows(100, 116, LW, &y0, &y1);
+    CHECK(y0 == r.y && y1 == r.y + r.h, "rows %d..%d for the same columns", y0, y1);
+    landmap_rows(0, LW, LW, &y0, &y1);
+    CHECK(y0 == 0 && y1 == LW, "whole width is not every panel row");
+}
+
 int main(void)
 {
+    test_landmap();
     test_ring();
     test_scale();
     test_bands();

@@ -19,8 +19,9 @@
  *   arduinoFFT           esp-dsp's dsps_fft2r_fc32(), with the Hamming
  *                        window computed here -- esp-dsp has none
  *   M5.Display drawing   straight into gfx_fb(), then gfx_blit() of the
- *                        rows that changed; text through gfx_draw_text()
- *                        in Ark12 rather than M5GFX's 6x8 font
+ *                        rows that changed; text in Ark12 rather than
+ *                        M5GFX's 6x8 font. 0006: in landscape drawn by
+ *                        this file onto gfx's portrait rows (landmap.h)
  *   Serial.printf        ESP_LOGI
  *
  * SPDX-License-Identifier: MIT
@@ -41,7 +42,9 @@
 #include "gfx.h"
 #include "lcd.h"
 #include "tab5io.h"
+#include "ark12.h"        /* 0006: glyphs, drawn turned */
 
+#include "landmap.h"      /* 0006 */
 #include "monoring.h"     /* 0003 */
 #include "spectrum.h"
 
@@ -49,14 +52,14 @@ static const char *TAG = "analyzer";
 
 /*
  * The sketch used setRotation(3): landscape, the same way up as the
- * printing on the back of the case. gfx counts quarter turns clockwise
- * from the panel's native portrait, and which of its two landscapes that
- * is has not been seen on a board yet.
- *
- * src: unverified. GFX_ROT_270 is a guess at M5GFX's 3 (= 270 degrees).
- *      If the picture is upside down, this is GFX_ROT_90.
+ * printing on the back of the case. 0002 got that from GFX_ROT_270,
+ * confirmed acceptable on the board; 0006 keeps gfx at GFX_ROT_0 and
+ * draws the same landscape picture itself, through landmap.h, so every
+ * blit is a straight copy of panel rows. LAND_W x LAND_H is the
+ * landscape the layout below is written in.
  */
-#define ANALYZER_ROTATION   (GFX_ROT_270)
+#define LAND_W              (LCD_V_RES)     /* 1280 */
+#define LAND_H              (LCD_H_RES)     /* 720 */
 
 /* The backlight, 0-100. The player's default (its LCD_BRIGHTNESS_PERCENT). */
 #define ANALYZER_BACKLIGHT  (80)
@@ -130,17 +133,70 @@ static void freq_label(float hz, char *out, size_t out_len)
     }
 }
 
-/* A horizontal run of one colour, straight into the shadow buffer. */
+/* ---- 0006: drawing in landscape on a portrait buffer ----
+ * Everything below takes landscape coordinates and lands it where
+ * landmap.h says. gfx's own text calls draw upright on the panel, so
+ * text is drawn here from the Ark12 glyphs, turned. */
+
+static void land_fill(int x, int y, int w, int h, uint16_t c)
+{
+    const landmap_rect_t r = landmap_rect(x, y, w, h, LAND_W);
+    gfx_fill_rect(r.x, r.y, r.w, r.h, c);
+}
+
+/* A horizontal landscape run is a panel column; one pixel wide. */
 static inline void hline(int x, int y, int w, uint16_t c)
 {
-    uint16_t *p = gfx_fb() + (size_t)y * (size_t)s_w + (size_t)x;
-    for (int i = 0; i < w; i++) p[i] = c;
+    land_fill(x, y, w, 1, c);
 }
+
+/* ASCII only, which is all this program writes. A glyph the font does
+ * not have is skipped, advancing by a narrow cell. */
+static int land_text_w(const char *s, int scale)
+{
+    int w = 0;
+    for (; *s; s++) {
+        int gw = ARK12_HALF_W;
+        uint16_t rows[ARK12_H];
+        if (!ark12_glyph((unsigned char)*s, &gw, rows)) gw = ARK12_HALF_W;
+        w += (gw + 1) * scale;
+    }
+    return w;
+}
+
+static void land_text(int x, int y, const char *s, int scale, uint16_t c)
+{
+    for (; *s; s++) {
+        int gw = ARK12_HALF_W;
+        uint16_t rows[ARK12_H];
+        if (ark12_glyph((unsigned char)*s, &gw, rows)) {
+            for (int row = 0; row < ARK12_H; row++)
+                for (int col = 0; col < gw; col++)
+                    if (rows[row] & (1u << col))
+                        land_fill(x + col * scale, y + row * scale, scale, scale, c);
+        } else {
+            gw = ARK12_HALF_W;
+        }
+        x += (gw + 1) * scale;
+    }
+}
+
+/* Send landscape columns [x0, x1) to the glass: panel rows, contiguous. */
+static void land_blit(int x0, int x1)
+{
+    int y0, y1;
+    landmap_rows(x0, x1, LAND_W, &y0, &y1);
+    gfx_blit(y0, y1);
+}
+
+/* One landscape row's colours for one bar, top to bottom: the panel
+ * columns of that bar's rows. MAX_GRAPH_H bounds it. */
+static uint16_t s_line[LAND_H];
 
 static void draw_static(void)
 {
-    gfx_fill_rect(0, 0, s_w, s_h, COL_BLACK);
-    gfx_draw_text(10, 4, "Tab5 Spectrum Analyzer", TITLE_SCALE, s_w - 200, COL_WHITE);
+    land_fill(0, 0, s_w, s_h, COL_BLACK);
+    land_text(10, 4, "Tab5 Spectrum Analyzer", TITLE_SCALE, COL_WHITE);
 
     for (int h = 0; h <= s_graph_h; h++) {
         int r, g;
@@ -150,7 +206,7 @@ static void draw_static(void)
     }
 
     /* dBFS ticks every 10 dB from the floor up to 0, labelled on the left. */
-    const int label_h = GFX_GLYPH_H(LABEL_SCALE);
+    const int label_h = ARK12_H * LABEL_SCALE;
     int first = ((int)SPECTRUM_MIN_DBFS / 10) * 10;
     if (first < SPECTRUM_MIN_DBFS) first += 10;
     for (int db = first; db <= (int)SPECTRUM_MAX_DBFS; db += 10) {
@@ -164,10 +220,10 @@ static void draw_static(void)
 
         char buf[8];
         snprintf(buf, sizeof(buf), "%d", db);
-        const int tw = gfx_text_w(buf, LABEL_SCALE);
-        gfx_draw_text(s_left - tw - 8, y - label_h / 2, buf, LABEL_SCALE, tw, COL_LABEL);
+        const int tw = land_text_w(buf, LABEL_SCALE);
+        land_text(s_left - tw - 8, y - label_h / 2, buf, LABEL_SCALE, COL_LABEL);
     }
-    gfx_draw_text(10, s_top - label_h - 4, "dBFS", LABEL_SCALE, 200, COL_LABEL);
+    land_text(10, s_top - label_h - 4, "dBFS", LABEL_SCALE, COL_LABEL);
 
     /* Frequency labels along the log axis. */
     static const float label_hz[] = { 80, 100, 500, 1000, 5000, 10000, 20000 };
@@ -179,27 +235,38 @@ static void draw_static(void)
         int x = spectrum_freq_x(f, s_graph_w);
         if (x > s_graph_w - 60) x = s_graph_w - 60;
         if (x < 0) x = 0;
-        gfx_draw_text(s_left + x, s_bottom + 10, buf, LABEL_SCALE, 120, COL_LABEL);
+        land_text(s_left + x, s_bottom + 10, buf, LABEL_SCALE, COL_LABEL);
     }
 
     hline(s_left, s_bottom, s_graph_w, COL_BASE);
-    gfx_blit(0, s_h);
+    gfx_blit(0, gfx_h());
 }
 
 /* Repaint rows [y_top..y_bot] of one bar's column with what belongs
- * there now. Called only on rows that changed since the last frame. */
+ * there now. Called only on rows that changed since the last frame.
+ *
+ * 0006: in panel terms the bar is w panel rows, and its landscape rows
+ * y_top..y_bot are one contiguous span of each of them -- so the colours
+ * are worked out once into s_line and copied w times. */
 static void repaint_rows(int xs, int w, int y_top, int y_bot, int bar_top_y, int peak_y)
 {
     if (y_top < s_top)        y_top = s_top;
     if (y_bot > s_bottom - 1) y_bot = s_bottom - 1;
+    if (y_top > y_bot) return;
     for (int y = y_top; y <= y_bot; y++) {
         uint16_t c;
         if (y == peak_y)                        c = COL_PEAK;
         else if (y >= bar_top_y)                c = s_row_colour[s_bottom - y];
         else if (s_row_grid[s_bottom - y])      c = COL_GRID;
         else                                    c = COL_BLACK;
-        hline(xs, y, w, c);
+        s_line[y] = c;
     }
+    const landmap_rect_t r = landmap_rect(xs, y_top, w, y_bot - y_top + 1, LAND_W);
+    uint16_t *fb = gfx_fb();
+    const int stride = gfx_w();
+    for (int py = r.y; py < r.y + r.h; py++)
+        memcpy(fb + (size_t)py * (size_t)stride + (size_t)r.x, &s_line[y_top],
+               (size_t)r.w * sizeof(uint16_t));
 }
 
 /* 0003: reads the microphones for as long as the program runs. */
@@ -248,11 +315,12 @@ static void fft(void)
     }
 }
 
-/* One frame of bars. Returns the dirty row range through *y0, *y1
- * (y1 exclusive; y0 == y1 when nothing changed). */
-static void render(float dt, int *y0, int *y1)
+/* One frame of bars. Returns the dirty landscape COLUMN range through
+ * *x0, *x1 (x1 exclusive; x0 == x1 when nothing changed) -- 0006: the
+ * columns, because columns are what map to contiguous panel rows. */
+static void render(float dt, int *x0, int *x1)
 {
-    int dirty_top = s_bottom, dirty_bot = s_top - 1;
+    int dirty_l = s_w, dirty_r = 0;
 
     for (int b = 0; b < SPECTRUM_BARS; b++) {
         const float mag = spectrum_band_mag(&s_band[b], s_mag);
@@ -276,28 +344,27 @@ static void render(float dt, int *y0, int *y1)
         if (old_peak_y > y_bot) y_bot = old_peak_y;
 
         if (y_top <= y_bot) {
-            repaint_rows(s_left + b * s_bar_w + 1, s_bar_w - 2, y_top, y_bot, bar_top_y, peak_y);
-            if (y_top < dirty_top) dirty_top = y_top;
-            if (y_bot > dirty_bot) dirty_bot = y_bot;
+            const int xs = s_left + b * s_bar_w + 1, w = s_bar_w - 2;
+            repaint_rows(xs, w, y_top, y_bot, bar_top_y, peak_y);
+            if (xs < dirty_l)     dirty_l = xs;
+            if (xs + w > dirty_r) dirty_r = xs + w;
         }
         s_prev_h[b]      = new_h;
         s_prev_peak_y[b] = peak_y;
     }
 
-    if (dirty_top < s_top)        dirty_top = s_top;
-    if (dirty_bot > s_bottom - 1) dirty_bot = s_bottom - 1;
-    *y0 = dirty_top;
-    *y1 = dirty_bot >= dirty_top ? dirty_bot + 1 : dirty_top;
+    *x0 = dirty_l;
+    *x1 = dirty_r > dirty_l ? dirty_r : dirty_l;
 }
 
 static void draw_fps(float fps)
 {
-    const int x = s_w - 170, y = 14, h = GFX_GLYPH_H(LABEL_SCALE);
+    const int x = s_w - 170, y = 14, h = ARK12_H * LABEL_SCALE;
     char buf[16];
     snprintf(buf, sizeof(buf), "%5.1f fps", fps);
-    gfx_fill_rect(x, y, s_w - x, h, COL_BLACK);
-    gfx_draw_text(x, y, buf, LABEL_SCALE, s_w - x, COL_WHITE);
-    gfx_blit(y, y + h);
+    land_fill(x, y, s_w - x, h, COL_BLACK);
+    land_text(x, y, buf, LABEL_SCALE, COL_WHITE);
+    land_blit(x, s_w);
 }
 
 void app_main(void)
@@ -322,8 +389,7 @@ void app_main(void)
 
     esp_lcd_panel_handle_t panel;
     ESP_ERROR_CHECK(lcd_init(&panel));
-    ESP_ERROR_CHECK(gfx_init(panel, LCD_H_RES, LCD_V_RES));
-    gfx_set_rotation(ANALYZER_ROTATION);
+    ESP_ERROR_CHECK(gfx_init(panel, LCD_H_RES, LCD_V_RES));     /* GFX_ROT_0: see LAND_W */
 
     /* Capture borrows playback's clocks (audio_out.h), so playback comes
      * up too, at the capture rate, and plays nothing. */
@@ -339,8 +405,8 @@ void app_main(void)
     for (int i = 0; i < SPECTRUM_FFT_SIZE; i++)
         s_window[i] = spectrum_hamming(i, SPECTRUM_FFT_SIZE);
 
-    s_w = gfx_w();
-    s_h = gfx_h();
+    s_w = LAND_W;
+    s_h = LAND_H;
     s_left   = 100;             /* room for the dB labels */
     s_right  = s_w - 10;
     s_top    = 70;              /* clear of the title */
@@ -381,9 +447,9 @@ void app_main(void)
         const float dt = spectrum_clampf((float)(now - last_us) * 1e-6f, 0.0005f, 0.25f);
         last_us = now;
 
-        int y0, y1;
-        render(dt, &y0, &y1);
-        if (y1 > y0) gfx_blit(y0, y1);
+        int x0, x1;
+        render(dt, &x0, &x1);
+        if (x1 > x0) land_blit(x0, x1);
         const int64_t t3 = esp_timer_get_time();
 
         t_capture += t1 - t0;

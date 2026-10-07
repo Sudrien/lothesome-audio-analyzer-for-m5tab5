@@ -155,3 +155,44 @@ build with the info level turned down.
 The player also lists, under its banner, any sdkconfig.defaults key the
 build's sdkconfig disagrees with (its cmake/defaults_check.cmake). Not
 here yet.
+
+### 0006 -- landscape drawn onto the panel's own rows
+
+With capture off the critical path (0003), draw was nearly all of
+every frame: 17-23 ms in a quiet room, at GFX_ROT_270. That angle keeps
+gfx's shadow buffer in landscape rows and sends each blit through a
+gather-transpose, because a band of landscape rows is a band of panel
+columns (feckless-graphics-handler's gfx.h calls it the expensive
+angle).
+
+So gfx stays at GFX_ROT_0 now, its shadow in the panel's own order, and
+`landmap.h` says where each landscape pixel lands. The mapping is the
+inverse of gfx's 270 gather -- px = ly, py = 1279 - lx -- so the picture
+on the glass is the one 0002 showed, the way up already accepted on
+the board. spectrumtest checks it against that gather for every pixel.
+
+What it buys: a bar, being a run of landscape columns, is a run of
+panel ROWS. Its changed landscape rows are one contiguous span of each
+of them, so repaint_rows() works the colours out once and memcpy()s
+them into each of the bar's 16 panel rows, and the blit of the frame's
+dirty columns is a plain, contiguous band of panel rows. No transpose
+anywhere.
+
+What it costs: gfx's text calls draw upright on the panel, so this
+file draws its own text from the Ark12 glyphs (land_text()), turned.
+ASCII only, which is all the analyzer writes; no right-to-left, no
+fullwidth, no ellipsis. gfx_fill_rect() still does the filling, through
+land_fill().
+
+The dirty range is now a range of landscape columns rather than rows:
+the leftmost to the rightmost bar that changed. With every bar moving,
+that is the graph's width, 1150 or so panel rows of 720 -- the same
+pixel count the transposed blit moved, but copied straight.
+
+Checked on the host by including analyzer.c in a harness with gfx
+stubbed onto a plain 720 x 1280 buffer, drawing the static layout, forty
+frames of a synthetic spectrum and the fps line, and reading the buffer
+back through landmap.h: the landscape picture comes out whole and the
+right way round. Not on a board yet. The figure to compare is the log's
+"draw", against 0005's 17-18 ms in a quiet room -- and against a run
+with music playing, which neither has had.
