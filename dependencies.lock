@@ -1,0 +1,163 @@
+dependencies:
+  espressif/cmake_utilities:
+    component_hash: 351350613ceafba240b761b4ea991e0f231ac7a9f59a9ee901f751bddc0bb18f
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=4.1'
+    source:
+      registry_url: https://components.espressif.com
+      type: service
+    version: 0.5.3
+  espressif/esp-dsp:
+    component_hash: ed9ac175b14e0414399a2b33c525579414b5bad19a2a67b12ea212def96f9a98
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=4.2'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 1.8.2
+  espressif/esp_lcd_st7121:
+    component_hash: 1d78b38f00dd25ff390c446c8d1b8e87cf7b7d95065d32f92cf5ad193ae70f58
+    dependencies:
+    - name: espressif/cmake_utilities
+      registry_url: https://components.espressif.com
+      require: private
+      version: 0.*
+    - name: idf
+      require: private
+      version: '>=5.4'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    targets:
+    - esp32p4
+    version: 1.0.1
+  espressif/esp_lcd_touch:
+    component_hash: 3f85a7d95af876f1a6ecca8eb90a81614890d0f03a038390804e5a77e2caf862
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=4.4.2'
+    source:
+      registry_url: https://components.espressif.com
+      type: service
+    version: 1.2.1
+  espressif/esp_lcd_touch_gt911:
+    component_hash: 737bdf29e0823eacf041381e81db2aaf5d378f3b5417df7f415f83319e3e790b
+    dependencies:
+    - name: espressif/esp_lcd_touch
+      registry_url: https://components.espressif.com
+      require: public
+      version: ^1.2.0
+    - name: idf
+      require: private
+      version: '>=5.2'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 1.2.1
+  espressif/esp_lcd_touch_st7123:
+    component_hash: c43fd76fb12b4dd1bf30d60e99e4ec150b16e17cafc942a58e6274d4b68e71fe
+    dependencies:
+    - name: espressif/cmake_utilities
+      registry_url: https://components.espressif.com
+      require: private
+      version: 0.*
+    - name: espressif/esp_lcd_touch
+      registry_url: https://components.espressif.com
+      require: public
+      version: ^1
+    - name: idf
+      require: private
+      version: '>=4.4.2'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 1.0.2
+  espressif/usb:
+    component_hash: 99eee72ea224d9117d4c342442717a1f20bf8112e2ab5d7d7038b827874f4c92
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=5.5.3'
+    source:
+      registry_url: https://components.espressif.com
+      type: service
+    targets:
+    - esp32s2
+    - esp32s3
+    - esp32s31
+    - esp32p4
+    - esp32h4
+    - linux
+    version: 1.6.0
+  espressif/usb_host_uac:
+    component_hash: 02f7e669b4dae033347e4523acaed4b8c402290a887878d396811c4bee47cc46
+    dependencies:
+    - name: espressif/cmake_utilities
+      registry_url: https://components.espressif.com
+      require: private
+      version: 0.5.*
+    - name: idf
+      require: private
+      version: '>=5.0'
+    - name: espressif/usb
+      registry_url: https://components.espressif.com
+      require: public
+      rules:
+      - if: idf_version >=6.0
+      - if: target not in ["linux"]
+      version: ^1.0.0
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    targets:
+    - esp32s2
+    - esp32s3
+    - esp32s31
+    - esp32p4
+    - esp32h4
+    - linux
+    version: 1.5.0
+  feckless_drivers:
+    component_hash: a47366aec9908664357cddf4f69e18642f57f36a469d0d994b303e6ee5e67e6c
+    dependencies:
+    - name: idf
+      version: '>=5.4.2'
+    - name: espressif/esp_lcd_touch_st7123
+      version: '*'
+    - name: espressif/esp_lcd_touch_gt911
+      version: '*'
+    source:
+      git: https://github.com/Sudrien/feckless-drivers-for-tab5.git
+      path: .
+      type: git
+    version: 39165a576b7ec449ac8bf72b4eb5b054e5e54a74
+  feckless_graphics_handler:
+    component_hash: d983cffa1f9b74e3e3b0a27922d655981d80cae7cbbf8287ec796d3d3badd51d
+    dependencies:
+    - name: idf
+      version: '>=5.4.2'
+    - name: espressif/esp_lcd_st7121
+      version: ^1.0.0
+    source:
+      git: https://github.com/Sudrien/feckless-graphics-handler-for-tab5.git
+      path: .
+      type: git
+    version: 390c89466719e0109d7067bbf57231f5381a4166
+  idf:
+    source:
+      type: idf
+    version: 6.1.0
+direct_dependencies:
+- espressif/esp-dsp
+- espressif/usb_host_uac
+- feckless_drivers
+- feckless_graphics_handler
+- idf
+manifest_hash: 46b4144b99d394a4e18aa90a88c9d809e666b49b14d8957259e49ff797e1cec9
+target: esp32p4
+version: 3.0.0
