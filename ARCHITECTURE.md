@@ -273,3 +273,19 @@ The registry's usb_host_uac, not the player's vendored copy with its
 descriptor-parser fix (5026), is what this builds against. A headset
 that the player handles and this does not is the first thing to
 suspect that for.
+
+### 0009 -- a picture in the README
+
+`docs/mockup.png` is the screen as `analyzer.c` draws it, made off the
+board: analyzer.c included into a host harness with gfx reduced to a
+plain 720 x 1280 buffer and every ESP-IDF and driver call stubbed, the
+static layout and the source label drawn, forty frames of a synthetic
+spectrum rendered, and the buffer read back through landmap.h into a
+1280 x 720 image. The same harness is how 0006's mapping was checked.
+
+So it shows the firmware's layout, text and colours exactly, and a
+spectrum that was never measured. The README says so under it. The
+harness is not committed: it leans on the player's texttest stubs and
+on stub headers written for the occasion, and is more scaffolding than
+it is worth keeping. A photo of the board is the better picture, when
+there is one.

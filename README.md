@@ -5,6 +5,13 @@ samples at 48 kHz, Hamming-windowed, an FFT, and 64 log-spaced bars from
 80 Hz to 24 kHz on a dBFS scale, with peak markers. Only the rows that
 changed are redrawn each frame.
 
+![The analyzer's screen, rendered on a host](docs/mockup.png)
+
+*Not a photo: `analyzer.c`'s drawing code run on a PC against a stand-in
+for the display, with a made-up spectrum, and read back through the same
+landscape mapping the board uses. The layout, labels and colours are
+the firmware's; the bars are not a real measurement.*
+
 A C port of the Arduino sketch in
 [m5tab5_spectrum_analyzer](https://github.com/Sudrien/m5tab5_spectrum_analyzer),
 kept unchanged in `original/` for reference. It runs on plain ESP-IDF
