@@ -1,4 +1,4 @@
-# Lothesome Audio Analyzer for M5Tab5
+# Lothesome Audio Analyzer *for M5Tab5*
 
 The M5Stack Tab5's two built-in microphones as a live spectrum: 1024
 samples at 48 kHz, Hamming-windowed, an FFT, and 64 log-spaced bars from
