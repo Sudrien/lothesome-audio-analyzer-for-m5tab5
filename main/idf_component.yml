@@ -6,10 +6,10 @@ dependencies:
   # out of defeatist-music-player-for-m5tab5. PINNED TO TAGS: a moving
   # branch would change underneath a build that worked.
   feckless_drivers:
-    git: https://github.com/Sudrien/feckless-drivers-for-tab5.git
+    git: https://github.com/Sudrien/feckless-drivers-for-m5tab5.git
     version: "v0.3.0"   # 0010: the TDM slot alignment
   feckless_graphics_handler:
-    git: https://github.com/Sudrien/feckless-graphics-handler-for-tab5.git
+    git: https://github.com/Sudrien/feckless-graphics-handler-for-m5tab5.git
     version: "v0.1.0"
 
   # feckless-drivers requires the USB audio class driver by name and does

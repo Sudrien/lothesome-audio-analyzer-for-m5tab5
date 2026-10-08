@@ -20,8 +20,8 @@ with no M5Unified and no Arduino core, on three libraries pulled out of
 
 | Library | For |
 |---|---|
-| [feckless-drivers-for-tab5](https://github.com/Sudrien/feckless-drivers-for-tab5) | the I2C bus and IO expanders, the ES7210 microphone capture |
-| [feckless-graphics-handler-for-tab5](https://github.com/Sudrien/feckless-graphics-handler-for-tab5) | the panel, the framebuffer, text |
+| [feckless-drivers-for-m5tab5](https://github.com/Sudrien/feckless-drivers-for-m5tab5) | the I2C bus and IO expanders, the ES7210 microphone capture |
+| [feckless-graphics-handler-for-m5tab5](https://github.com/Sudrien/feckless-graphics-handler-for-m5tab5) | the panel, the framebuffer, text |
 | [esp-dsp](https://components.espressif.com/components/espressif/esp-dsp) | the FFT |
 
 ## Building

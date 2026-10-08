@@ -309,3 +309,10 @@ before samples arrive, which the drawing loop already waits out.
 
 And one cosmetic: USB product strings come space-padded ("C-Media USB
 Headphone Set  "), so the label and the log line trim them.
+
+### 0011 -- the libraries' new names
+
+feckless-drivers and feckless-graphics-handler are -for-m5tab5 now,
+not -for-tab5 (the TODO in b714150). The two git: URLs in
+main/idf_component.yml, and the names in README.md and CLAUDE.md,
+follow. Component names and tags are unchanged.

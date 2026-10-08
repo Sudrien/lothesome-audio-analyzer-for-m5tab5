@@ -39,8 +39,8 @@ of the next build has its diff read before it is committed.
 build.** The defaults only fill keys an existing sdkconfig lacks.
 
 **The board, the microphones and the panel are not in this
-repository.** They are feckless-drivers-for-tab5 and
-feckless-graphics-handler-for-tab5. A change to them is a patch against
+repository.** They are feckless-drivers-for-m5tab5 and
+feckless-graphics-handler-for-m5tab5. A change to them is a patch against
 that repository, under the player's rules, and this one picks it up by
 moving its tag in `main/idf_component.yml`.
 
