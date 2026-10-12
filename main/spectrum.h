@@ -18,6 +18,7 @@
 
 #include <math.h>
 #include <stdbool.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -30,13 +31,13 @@ extern "C" {
 
 /* ---- Frequency axis ---- */
 /*
- * 0004: 80 Hz, not the sketch's 50. The array microphones only start
- * telling frequencies apart at about 80 Hz, so bars below it showed
- * nothing the hardware can resolve; the axis starts where it does.
- *
- * src: observed on the board, not a datasheet figure.
+ * 0004 set this to 80 Hz, where the array microphones start telling
+ * frequencies apart. 0013: 20 Hz, the bottom of hearing, now that the
+ * bass path below resolves it; a USB measurement microphone hears down
+ * there, and the part of the axis a source cannot hear is greyed
+ * (analyzer.c's source floors) rather than cut off.
  */
-#define SPECTRUM_LOG_MIN_HZ    (80.0f)
+#define SPECTRUM_LOG_MIN_HZ    (20.0f)
 #define SPECTRUM_LOG_MAX_HZ    ((float)SPECTRUM_SAMPLE_RATE / 2.0f)
 
 /* ---- Level, in dBFS ----
@@ -76,6 +77,29 @@ extern "C" {
 #define SPECTRUM_FULL_SCALE_MAG \
     (SPECTRUM_SAMPLE_FULL_SCALE * (SPECTRUM_FFT_SIZE / 2.0f) * SPECTRUM_HAMMING_GAIN)
 
+/* ---- 0013: the bass path ----
+ * A 1024-point FFT at 48 kHz has 46.9 Hz bins: 20 to 80 Hz is about one
+ * bin. So the capture is also low-passed and kept every 16th sample, and
+ * a second FFT of the same size runs on that: 3 kHz, 2.9 Hz bins, a
+ * 341 ms window. Everything below the split comes from it. The bass
+ * moves slower than the treble, as it must -- telling 30 Hz from 33 Hz
+ * takes about a third of a second.
+ *
+ * The filter is a Blackman-windowed sinc cut at the decimated Nyquist;
+ * its transition is about 520 Hz wide at 48 kHz, so what folds back
+ * below the split is from 1760 Hz up, at least 74 dB down.
+ * test/spectrumtest.c measures both.
+ */
+#define SPECTRUM_BASS_DECIM    (16)
+#define SPECTRUM_BASS_TAPS     (511)            /* odd: symmetric about the middle tap */
+#define SPECTRUM_BASS_HIST     (512)            /* a power of two >= TAPS */
+#define SPECTRUM_BASS_SPLIT    (0.8f)           /* of the decimated Nyquist: 1200 Hz at 48 kHz */
+
+static inline float spectrum_bass_split_hz(float rate)
+{
+    return SPECTRUM_BASS_SPLIT * rate / (2.0f * SPECTRUM_BASS_DECIM);
+}
+
 /* ---- Ballistics ----
  * Time constants in seconds rather than per-frame steps, so the display
  * moves the same at any framerate. */
@@ -94,6 +118,49 @@ static inline float spectrum_hamming(int n, int size)
     return 0.54f - 0.46f * cosf(2.0f * 3.14159265358979f * (float)n / (float)(size - 1));
 }
 
+/* 0013: the bass filter's taps into h[SPECTRUM_BASS_TAPS], unity at DC. */
+static inline void spectrum_bass_filter(float *h)
+{
+    const int   m  = SPECTRUM_BASS_TAPS - 1;
+    const float fc = 0.5f / (float)SPECTRUM_BASS_DECIM;     /* cycles per sample */
+    const float pi = 3.14159265358979f;
+    float sum = 0.0f;
+    for (int n = 0; n <= m; n++) {
+        const float t = (float)n - (float)m / 2.0f;
+        const float sinc = t == 0.0f ? 2.0f * fc : sinf(2.0f * pi * fc * t) / (pi * t);
+        const float w = 0.42f - 0.5f * cosf(2.0f * pi * n / m) + 0.08f * cosf(4.0f * pi * n / m);
+        h[n] = sinc * w;
+        sum += h[n];
+    }
+    for (int n = 0; n <= m; n++) h[n] /= sum;
+}
+
+/* 0013: the decimator's state. One writer, so no lock. */
+typedef struct {
+    float    hist[SPECTRUM_BASS_HIST];
+    uint32_t pos;
+    int      phase;
+} spectrum_decim_t;
+
+/* Push n samples through; every SPECTRUM_BASS_DECIM-th makes one output
+ * in out[]. Returns how many it made: at most n / DECIM + 1. Only the
+ * outputs are filtered, which is what makes this cheap. */
+static inline int spectrum_decim(spectrum_decim_t *d, const float *h,
+                                 const float *in, int n, float *out)
+{
+    int made = 0;
+    for (int i = 0; i < n; i++) {
+        d->hist[d->pos++ & (SPECTRUM_BASS_HIST - 1)] = in[i];
+        if (++d->phase < SPECTRUM_BASS_DECIM) continue;
+        d->phase = 0;
+        float y = 0.0f;
+        for (int k = 0; k < SPECTRUM_BASS_TAPS; k++)
+            y += h[k] * d->hist[(d->pos - 1u - (uint32_t)k) & (SPECTRUM_BASS_HIST - 1)];
+        out[made++] = y;
+    }
+    return made;
+}
+
 /*
  * Which bins make one bar. Bars are log-spaced from LOG_MIN to LOG_MAX.
  * Below about 50 Hz a bar is narrower than one bin, and two neighbours
@@ -101,6 +168,7 @@ static inline float spectrum_hamming(int n, int size)
  * between two bins, interpolated, instead of averaging a range.
  */
 typedef struct {
+    bool  bass;             /* 0013: bins of the bass FFT, not the main one */
     bool  narrow;
     float centre_bin;       /* narrow: where to interpolate */
     int   lo_bin, hi_bin;   /* wide: the inclusive range averaged */
@@ -119,15 +187,19 @@ typedef struct {
  */
 static inline spectrum_band_t spectrum_band_n(int bar, int bars, float rate)
 {
-    const float hz_per_bin  = rate / (float)SPECTRUM_FFT_SIZE;
     const int   usable_bins = SPECTRUM_FFT_SIZE / 2;
     const float ratio       = (rate / 2.0f) / SPECTRUM_LOG_MIN_HZ;
     const float lo_f = SPECTRUM_LOG_MIN_HZ * powf(ratio, (float)bar / (float)bars);
     const float hi_f = SPECTRUM_LOG_MIN_HZ * powf(ratio, (float)(bar + 1) / (float)bars);
+    /* 0013: a bar wholly under the split reads the bass FFT. */
+    const bool  bass        = hi_f <= spectrum_bass_split_hz(rate);
+    const float hz_per_bin  = rate / (bass ? (float)SPECTRUM_BASS_DECIM : 1.0f) /
+                              (float)SPECTRUM_FFT_SIZE;
     const float lo_b = lo_f / hz_per_bin;
     const float hi_b = hi_f / hz_per_bin;
 
     spectrum_band_t b = { 0 };
+    b.bass = bass;
     if (hi_b - lo_b < 1.0f) {
         b.narrow = true;
         b.centre_bin = spectrum_clampf((lo_b + hi_b) * 0.5f, 1.0f, (float)(usable_bins - 2));

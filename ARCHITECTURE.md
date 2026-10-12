@@ -333,3 +333,25 @@ The display now shows everything the FFT resolves, and no more: a bin is
 46.9 Hz, so below about 9.6 kHz a column is narrower than a bin and is
 interpolated between two. The low end's resolution is
 `SPECTRUM_FFT_SIZE`'s to give, not the display's.
+
+### 0013 -- down to 20 Hz, on a bass FFT of its own
+
+The axis starts at 20 Hz. A bin of the main FFT is 46.9 Hz, so the
+capture task also low-passes each chunk and keeps every 16th sample
+(`spectrum_decim()`, a 511-tap Blackman-windowed sinc, only the outputs
+computed), into a second ring. Each frame runs the same 1024-point FFT
+on that ring's newest window: 3 kHz, 2.9 Hz bins, 341 ms. A band wholly
+under 1.2 kHz -- 0.8 of the decimated Nyquist -- reads it
+(`spectrum_band_t.bass`).
+
+The filter is flat to 0.05 dB below the split, and what would fold back
+below it is at least 70 dB down; a bin-centred tone through it reads its
+dBFS on the bass FFT within 0.1 dB. `test/spectrumtest.c` checks all
+three. The bass is slower than the treble by its window, which is the
+price of the resolution, not a defect.
+
+Each source has a floor, `k_source_floor_hz`: 80 Hz for the array (0004)
+and the jack, 20 Hz for USB. Below it the graph is filled grey and its
+columns are not drawn, so a deaf region does not read as silence. A
+source change now always rebuilds the layout, since the floor can move
+without the rate.

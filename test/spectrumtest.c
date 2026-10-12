@@ -20,6 +20,14 @@
 
 static int checks, failures;
 
+/* 0013: a band's top edge in Hz, whichever FFT it reads, so bands on
+ * either side of the bass split can be put in order. */
+static float band_top_hz(const spectrum_band_t *b, float rate)
+{
+    const float hz_per_bin = rate / (b->bass ? SPECTRUM_BASS_DECIM : 1) / SPECTRUM_FFT_SIZE;
+    return (b->narrow ? b->centre_bin : (float)b->hi_bin) * hz_per_bin;
+}
+
 #define CHECK(cond, ...) do { checks++; if (!(cond)) { failures++; \
     printf("FAIL %s:%d: ", __FILE__, __LINE__); printf(__VA_ARGS__); printf("\n"); } } while (0)
 
@@ -66,25 +74,27 @@ static void test_scale(void)
 
 static void test_bands(void)
 {
-    int narrow = 0, prev_hi = 0;
-    float prev_centre = 0;
+    int narrow = 0;
+    float prev_hz = 0;
+    bool was_bass = true;
     for (int b = 0; b < SPECTRUM_BARS; b++) {
         const spectrum_band_t s = spectrum_band(b);
         if (s.narrow) {
             narrow++;
             CHECK(s.centre_bin >= 1.0f && s.centre_bin <= N / 2 - 2, "bar %d centre %f", b, s.centre_bin);
-            CHECK(s.centre_bin > prev_centre, "bar %d centre not rising", b);
-            prev_centre = s.centre_bin;
-            CHECK(narrow == b + 1, "narrow bar %d after a wide one", b);
         } else {
             CHECK(s.lo_bin >= 1 && s.hi_bin <= N / 2 - 1, "bar %d bins %d..%d", b, s.lo_bin, s.hi_bin);
             CHECK(s.lo_bin <= s.hi_bin, "bar %d empty", b);
-            CHECK(s.hi_bin >= prev_hi, "bar %d goes backwards", b);
-            prev_hi = s.hi_bin;
         }
+        const float hz = band_top_hz(&s, 48000.0f);
+        CHECK(hz >= prev_hz, "bar %d goes backwards", b);
+        prev_hz = hz;
+        CHECK(was_bass || !s.bass, "bar %d back on the bass FFT", b);
+        was_bass = s.bass;
     }
-    /* 80 Hz to 24 kHz in 64 log steps is ~9.3% a bar; a bin is 46.9 Hz,
-     * so bars stay narrower than a bin up to ~500 Hz. */
+    /* 0013: 20 Hz to 24 kHz in 64 log steps is ~11.7% a bar; the bass
+     * FFT's bin is 2.9 Hz, so only the first bar or two are narrower
+     * than a bin. */
     CHECK(narrow > 0 && narrow < SPECTRUM_BARS / 2, "%d narrow bars", narrow);
     const spectrum_band_t last = spectrum_band(SPECTRUM_BARS - 1);
     CHECK(!last.narrow && last.hi_bin == N / 2 - 1, "top bar does not reach Nyquist");
@@ -194,12 +204,14 @@ static void test_rates(void)
 {
     const float rates[] = { 16000.0f, 22050.0f, 32000.0f, 44100.0f, 48000.0f };
     for (size_t r = 0; r < sizeof(rates) / sizeof(rates[0]); r++) {
-        int prev_hi = 0, ok = 1;
+        int ok = 1;
+        float prev_hz = 0;
         for (int b = 0; b < SPECTRUM_BARS; b++) {
             const spectrum_band_t s = spectrum_band_at(b, rates[r]);
-            if (!s.narrow) { ok &= s.lo_bin >= 1 && s.hi_bin >= s.lo_bin &&
-                                   s.hi_bin <= N / 2 - 1 && s.hi_bin >= prev_hi;
-                             prev_hi = s.hi_bin; }
+            if (!s.narrow) ok &= s.lo_bin >= 1 && s.hi_bin >= s.lo_bin && s.hi_bin <= N / 2 - 1;
+            const float hz = band_top_hz(&s, rates[r]);
+            ok &= hz >= prev_hz;
+            prev_hz = hz;
         }
         CHECK(ok, "bands out of order at %.0f Hz", rates[r]);
         const spectrum_band_t top = spectrum_band_at(SPECTRUM_BARS - 1, rates[r]);
@@ -218,14 +230,14 @@ static void test_rates(void)
 static void test_columns(void)
 {
     const int cols = 1170;
-    int prev_hi = 0, ok = 1;
-    float prev_centre = 0;
+    int ok = 1;
+    float prev_hz = 0;
     for (int b = 0; b < cols; b++) {
         const spectrum_band_t s = spectrum_band_n(b, cols, 48000.0f);
-        if (s.narrow) { ok &= s.centre_bin >= prev_centre; prev_centre = s.centre_bin; }
-        else          { ok &= s.lo_bin >= 1 && s.hi_bin >= s.lo_bin &&
-                              s.hi_bin <= N / 2 - 1 && s.hi_bin >= prev_hi;
-                        prev_hi = s.hi_bin; }
+        if (!s.narrow) ok &= s.lo_bin >= 1 && s.hi_bin >= s.lo_bin && s.hi_bin <= N / 2 - 1;
+        const float hz = band_top_hz(&s, 48000.0f);
+        ok &= hz >= prev_hz;
+        prev_hz = hz;
     }
     CHECK(ok, "columns out of order");
     const spectrum_band_t top = spectrum_band_n(cols - 1, cols, 48000.0f);
@@ -242,6 +254,62 @@ static void test_columns(void)
           a.centre_bin == b.centre_bin, "spectrum_band_at() is not SPECTRUM_BARS bars");
 }
 
+/* 0013: the bass filter's response at f Hz of 48 kHz, by the definition. */
+static double lp_db(const float *h, double f)
+{
+    double re = 0, im = 0;
+    for (int n = 0; n < SPECTRUM_BASS_TAPS; n++) {
+        re += h[n] * cos(2.0 * M_PI * f / 48000.0 * n);
+        im -= h[n] * sin(2.0 * M_PI * f / 48000.0 * n);
+    }
+    return 20.0 * log10(sqrt(re * re + im * im) + 1e-12);
+}
+
+/* 0013: the bass path. Flat to the split, deep from where anything would
+ * fold back below it, and a tone through the decimator reads the same
+ * dBFS on the bass FFT as it would on the main one. */
+static void test_bass(void)
+{
+    static float h[SPECTRUM_BASS_TAPS];
+    spectrum_bass_filter(h);
+    const double split = spectrum_bass_split_hz(48000.0f);
+    CHECK(fabs(split - 1200.0) < 1e-3, "split at %.1f Hz", split);
+    double worst_pass = 0, worst_stop = -999;
+    for (double f = 0; f <= split; f += 5) {
+        const double d = fabs(lp_db(h, f));
+        if (d > worst_pass) worst_pass = d;
+    }
+    /* What folds onto [0, split] at 3 kHz comes from [3000 - split, ...). */
+    for (double f = 3000.0 - split; f <= 24000.0; f += 5) {
+        const double d = lp_db(h, f);
+        if (d > worst_stop) worst_stop = d;
+    }
+    CHECK(worst_pass < 0.05, "passband ripple %.3f dB", worst_pass);
+    CHECK(worst_stop < -70.0, "stopband only %.1f dB", worst_stop);
+
+    /* 100 bass bins is 293 Hz: a bin-centred tone at -20 dBFS, decimated
+     * in capture-sized chunks, then the newest N outputs. */
+    static spectrum_decim_t d;
+    static float in[120], out[120 / SPECTRUM_BASS_DECIM + 1], bass[N * 2];
+    const double f = 100.0 * 3000.0 / N;
+    const double amp = SPECTRUM_SAMPLE_FULL_SCALE * pow(10.0, -20.0 / 20.0);
+    int have = 0;
+    long t = 0;
+    while (have < N * 2) {
+        for (int i = 0; i < 120; i++, t++) in[i] = (float)(amp * sin(2.0 * M_PI * f * t / 48000.0));
+        const int m = spectrum_decim(&d, h, in, 120, out);
+        CHECK(m <= 120 / SPECTRUM_BASS_DECIM + 1, "%d outputs from 120", m);
+        for (int i = 0; i < m && have < N * 2; i++) bass[have++] = out[i];
+    }
+    const float db = spectrum_dbfs((float)dft_mag(bass + N, 100));
+    CHECK(fabsf(db + 20.0f) < 0.1f, "bass tone read %.3f dBFS", db);
+
+    const spectrum_band_t lo = spectrum_band_n(0, 1170, 48000.0f);
+    CHECK(lo.bass, "20 Hz is not on the bass FFT");
+    const spectrum_band_t hi = spectrum_band_n(1169, 1170, 48000.0f);
+    CHECK(!hi.bass, "Nyquist is on the bass FFT");
+}
+
 int main(void)
 {
     test_rates();
@@ -251,6 +319,7 @@ int main(void)
     test_bands();
     test_ballistics();
     test_columns();
+    test_bass();
     test_axes();
     printf("spectrumtest: %d checks, %d failures\n", checks, failures);
     return failures ? 1 : 0;

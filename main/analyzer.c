@@ -81,6 +81,7 @@ static const char *TAG = "analyzer";
 #define COL_PEAK            COL_WHITE
 #define COL_BASE            ((uint16_t)0x7BEF)
 #define COL_LABEL           ((uint16_t)0xD69A)
+#define COL_DEAF            RGB(28, 28, 28)  /* 0013: below the source's floor */
 
 #define MAX_GRAPH_H         (800)   /* bound for the row tables */
 
@@ -109,10 +110,21 @@ static float   s_window[SPECTRUM_FFT_SIZE];
 static float   s_fft[SPECTRUM_FFT_SIZE * 2] __attribute__((aligned(16)));  /* re, im */
 static float   s_mag[SPECTRUM_FFT_SIZE / 2];
 
+/* 0013: the bass path (spectrum.h). The capture task decimates into
+ * s_bass_ring; each frame takes its newest window into a second FFT. */
+static float            s_bass_taps[SPECTRUM_BASS_TAPS];
+static spectrum_decim_t s_decim;
+static float            s_bass_chunk[CAPTURE_CHUNK / SPECTRUM_BASS_DECIM + 1];
+static monoring_t       s_bass_ring;
+static float            s_bass_fft[SPECTRUM_FFT_SIZE * 2] __attribute__((aligned(16)));
+static float            s_bass_mag[SPECTRUM_FFT_SIZE / 2];
+static bool             s_bass_ready;    /* a whole bass window has arrived */
+
 /* ---- layout ---- */
 static int s_w, s_h;
 static int s_left, s_right, s_top, s_bottom, s_graph_w, s_graph_h;
 static float s_max_hz = SPECTRUM_LOG_MAX_HZ;    /* 0008: the source's Nyquist */
+static int   s_first_col;    /* 0013: the first column the source can hear */
 
 /* The colour of each row, by height above the baseline, and whether a
  * dB gridline sits there. By row, never by level: see spectrum_row_rg(). */
@@ -232,7 +244,7 @@ static void draw_static(void)
     land_text(10, s_top - label_h - 4, "dBFS", LABEL_SCALE, COL_LABEL);
 
     /* Frequency labels along the log axis. */
-    static const float label_hz[] = { 80, 100, 500, 1000, 5000, 10000, 20000 };
+    static const float label_hz[] = { 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000 };
     for (size_t i = 0; i < sizeof(label_hz) / sizeof(label_hz[0]); i++) {
         const float f = label_hz[i];
         if (f < SPECTRUM_LOG_MIN_HZ || f > s_max_hz) continue;
@@ -335,6 +347,14 @@ static source_t switch_source(source_t from, source_t to)
     return SRC_BUILTIN;
 }
 
+/* 0013: one chunk of mono to the main ring and, decimated, the bass one. */
+static void feed(const float *mono, size_t n)
+{
+    monoring_write(&s_ring, mono, n);
+    const int m = spectrum_decim(&s_decim, s_bass_taps, mono, (int)n, s_bass_chunk);
+    if (m) monoring_write(&s_bass_ring, s_bass_chunk, (size_t)m);
+}
+
 /* 0003: reads the microphones for as long as the program runs. */
 static void capture_task(void *arg)
 {
@@ -400,7 +420,7 @@ static void capture_task(void *arg)
                                         : (float)s_frames[i];
                 s_chunk[i] = v * 256.0f;
             }
-            if (n) monoring_write(&s_ring, s_chunk, n);
+            if (n) feed(s_chunk, n);
             else   vTaskDelay(pdMS_TO_TICKS(2));
             continue;
         }
@@ -416,7 +436,7 @@ static void capture_task(void *arg)
                 s_chunk[i] = ((float)s_frames[2 * i] + (float)s_frames[2 * i + 1]) * 0.5f;
             }
         }
-        if (n) monoring_write(&s_ring, s_chunk, n);
+        if (n) feed(s_chunk, n);
         else   vTaskDelay(pdMS_TO_TICKS(2));
     }
 }
@@ -439,6 +459,17 @@ static bool capture(void)
         s_fft[2 * i]     = s_mono[i] * s_window[i];
         s_fft[2 * i + 1] = 0.0f;
     }
+    /* 0013: the bass window, the newest one too. Until a whole one has
+     * arrived (341 ms after boot) the bass bars stay at the floor. */
+    const uint32_t bend = monoring_count(&s_bass_ring);
+    s_bass_ready = bend >= SPECTRUM_FFT_SIZE;
+    if (s_bass_ready) {
+        monoring_newest(&s_bass_ring, bend, s_mono, SPECTRUM_FFT_SIZE);
+        for (int i = 0; i < SPECTRUM_FFT_SIZE; i++) {
+            s_bass_fft[2 * i]     = s_mono[i] * s_window[i];
+            s_bass_fft[2 * i + 1] = 0.0f;
+        }
+    }
     return true;
 }
 
@@ -450,6 +481,16 @@ static void fft(void)
         const float re = s_fft[2 * i], im = s_fft[2 * i + 1];
         s_mag[i] = sqrtf(re * re + im * im);
     }
+    if (!s_bass_ready) {
+        memset(s_bass_mag, 0, sizeof(s_bass_mag));
+        return;
+    }
+    dsps_fft2r_fc32(s_bass_fft, SPECTRUM_FFT_SIZE);       /* 0013 */
+    dsps_bit_rev_fc32(s_bass_fft, SPECTRUM_FFT_SIZE);
+    for (int i = 0; i < SPECTRUM_FFT_SIZE / 2; i++) {
+        const float re = s_bass_fft[2 * i], im = s_bass_fft[2 * i + 1];
+        s_bass_mag[i] = sqrtf(re * re + im * im);
+    }
 }
 
 /* One frame of bars. Returns the dirty landscape COLUMN range through
@@ -459,8 +500,8 @@ static void render(float dt, int *x0, int *x1)
 {
     int dirty_l = s_w, dirty_r = 0;
 
-    for (int b = 0; b < s_graph_w; b++) {
-        const float mag = spectrum_band_mag(&s_band[b], s_mag);
+    for (int b = s_first_col; b < s_graph_w; b++) {
+        const float mag = spectrum_band_mag(&s_band[b], s_band[b].bass ? s_bass_mag : s_mag);
         spectrum_ballistics(spectrum_frac(spectrum_dbfs(mag)), dt, &s_level[b], &s_peak[b]);
 
         const int new_h     = (int)(s_level[b] * (float)s_graph_h);
@@ -503,12 +544,27 @@ static void draw_source(int src)
     land_blit(x, x_end);
 }
 
+/*
+ * 0013: the lowest frequency each source hears. The array microphones
+ * stop telling frequencies apart at about 80 Hz (0004, observed on the
+ * board); a headset's capsule is no better; a USB microphone may be a
+ * measurement one, flat to 20 Hz. Below the floor the graph is greyed
+ * and not drawn, so a deaf region is not mistaken for a quiet one.
+ */
+static const float k_source_floor_hz[SRC_COUNT] = {
+    [SRC_BUILTIN] = 80.0f,
+    [SRC_JACK]    = 80.0f,
+    [SRC_USB]     = SPECTRUM_LOG_MIN_HZ,
+};
+
 /* 0008: the bars for a sample rate -- bands, the axis's top, a cleared
  * graph with its labels -- and every bar back at the floor, since the
- * graph under them has just been repainted. */
-static void layout_for_rate(uint32_t rate)
+ * graph under them has just been repainted. 0013: and for a source,
+ * whose floor greys the left of the graph. */
+static void layout_for(uint32_t rate, int src)
 {
     s_max_hz = (float)rate / 2.0f;
+    s_first_col = spectrum_freq_x_at(k_source_floor_hz[src], s_graph_w, s_max_hz);
     for (int b = 0; b < s_graph_w; b++) {
         s_band[b] = spectrum_band_n(b, s_graph_w, (float)rate);
         s_level[b] = s_peak[b] = 0.0f;
@@ -516,6 +572,10 @@ static void layout_for_rate(uint32_t rate)
         s_prev_peak_y[b] = s_bottom;
     }
     draw_static();
+    if (s_first_col > 0) {
+        land_fill(s_left, s_top, s_first_col, s_graph_h, COL_DEAF);
+        land_blit(s_left, s_left + s_first_col);
+    }
 }
 
 static void draw_fps(float fps)
@@ -569,6 +629,7 @@ void app_main(void)
         ESP_LOGW(TAG, "no USB host; USB microphones will not be seen");
     }
 
+    spectrum_bass_filter(s_bass_taps);      /* 0013: before capture's first chunk */
     if (xTaskCreatePinnedToCore(capture_task, "capture", CAPTURE_STACK, NULL,
                                 CAPTURE_PRIO, NULL, CAPTURE_CORE) != pdPASS) {
         ESP_LOGE(TAG, "no capture task");
@@ -590,7 +651,7 @@ void app_main(void)
     if (s_graph_h > MAX_GRAPH_H) s_graph_h = MAX_GRAPH_H;
     s_bottom = s_top + s_graph_h;
 
-    layout_for_rate(SPECTRUM_SAMPLE_RATE);     /* 0008: was the bands and draw_static() */
+    layout_for(SPECTRUM_SAMPLE_RATE, SRC_BUILTIN);     /* 0008, 0013 */
     ESP_ERROR_CHECK(lcd_backlight_set(ANALYZER_BACKLIGHT));
     ESP_LOGI(TAG, "%dx%d, graph %dx%d, a bar per column", s_w, s_h,
              s_graph_w, s_graph_h);
@@ -622,11 +683,10 @@ void app_main(void)
         if (x1 > x0) land_blit(x0, x1);
         if (s_source != shown_source) {
             shown_source = s_source;
-            /* 0008: a USB microphone's rate, published before its source. */
-            if (s_rate != shown_rate) {
-                shown_rate = s_rate;
-                layout_for_rate(shown_rate);
-            }
+            /* 0008: a USB microphone's rate, published before its source.
+             * 0013: every source change, since each has its own floor. */
+            shown_rate = s_rate;
+            layout_for(shown_rate, shown_source);
             draw_source(shown_source);
         }
         const int64_t t3 = esp_timer_get_time();

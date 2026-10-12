@@ -2,7 +2,7 @@
 
 The M5Stack Tab5's two built-in microphones as a live spectrum: 1024
 samples at 48 kHz, Hamming-windowed, an FFT, and a log-spaced spectrum from
-80 Hz to 24 kHz, a bar per pixel column, on a dBFS scale, with peak markers. Only the rows that
+20 Hz to 24 kHz, a bar per pixel column, on a dBFS scale, with peak markers. Only the rows that
 changed are redrawn each frame.
 
 ![The analyzer's screen, rendered on a host](docs/mockup.png)
@@ -48,7 +48,7 @@ In order of preference:
 
 1. **A USB microphone** on the USB-A port -- a UAC headset or a USB mic.
    It runs at its own sample rate, and the axis runs to that rate's
-   Nyquist: a 16 kHz headset shows 80 Hz to 8 kHz.
+   Nyquist: a 16 kHz headset shows 20 Hz to 8 kHz.
 2. **A headset on the 3.5 mm jack.**
 3. **The two built-in microphones.**
 
@@ -56,6 +56,14 @@ The source is named at the top of the screen. The jack senses a plug,
 not a microphone, so plain headphones give an empty spectrum. Plug in
 directly: full-speed USB audio devices do not work behind a hub on the
 Tab5's port.
+
+## The bass
+
+Below 1.2 kHz the spectrum comes from a second FFT of the sound
+low-passed and decimated to 3 kHz: 2.9 Hz bins instead of 46.9, over a
+341 ms window, so the bass is finer and slower than the treble. The
+part of the axis a source cannot hear is greyed: below 80 Hz for the
+built-in microphones and the jack, nothing for a USB microphone.
 
 ## The scale
 
