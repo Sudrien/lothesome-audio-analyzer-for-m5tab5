@@ -83,6 +83,7 @@ static const char *TAG = "analyzer";
 #define COL_BASE            ((uint16_t)0x7BEF)
 #define COL_LABEL           ((uint16_t)0xD69A)
 #define COL_DEAF            RGB(28, 28, 28)  /* 0013: below the source's floor */
+#define DEAF_DBFS           (-80.0f)         /* 0020: the outline's top */
 #define COL_CLIP            RGB(255, 40, 40) /* 0014 */
 
 /*
@@ -231,6 +232,15 @@ static void land_fill(int x, int y, int w, int h, uint16_t c)
 {
     const landmap_rect_t r = landmap_rect(x, y, w, h, LAND_W);
     gfx_fill_rect(r.x, r.y, r.w, r.h, c);
+}
+
+/* 0020: a one-pixel rectangle's edges, landscape coordinates. */
+static void land_outline(int x, int y, int w, int h, uint16_t c)
+{
+    land_fill(x, y, w, 1, c);
+    land_fill(x, y + h - 1, w, 1, c);
+    land_fill(x, y, 1, h, c);
+    land_fill(x + w - 1, y, 1, h, c);
 }
 
 /* A horizontal landscape run is a panel column; one pixel wide. */
@@ -828,18 +838,26 @@ static void layout_for(uint32_t rate, int src)
         s_oct_deaf[b] = spectrum_oct_centre(b) * powf(10.0f, 0.05f) <= k_source_floor_hz[src];
     }
     draw_static();
+
+    /* 0020: what a source cannot hear is an empty outline from the floor
+     * to -80 dBFS -- a bar with nothing in it, not a grey block that
+     * reads as a fault. A band each in the 1/3-octave view; one box over
+     * the span of columns in the others. The waterfall under it keeps
+     * its dark fill: it has no level for a box to stand on. */
+    const int deaf_y = s_bottom - (int)(spectrum_frac(DEAF_DBFS) * (float)s_graph_h);
     if (s_mode == MODE_OCT) {
         int last_deaf = -1;
-        for (int b = 0; b < SPECTRUM_OCT_BANDS; b++) if (s_oct_deaf[b]) last_deaf = b;
-        if (last_deaf >= 0) {
-            const int w = (last_deaf + 1) * s_oct_slot;
-            land_fill(s_left, s_top, w, s_graph_h, COL_DEAF);
-            land_blit(s_left, s_left + w);
+        for (int b = 0; b < SPECTRUM_OCT_BANDS; b++) {
+            if (!s_oct_deaf[b]) continue;
+            land_outline(s_left + b * s_oct_slot + OCT_GAP / 2, deaf_y,
+                         s_oct_slot - OCT_GAP, s_bottom - deaf_y, COL_BASE);
+            last_deaf = b;
         }
+        if (last_deaf >= 0) land_blit(s_left, s_left + (last_deaf + 1) * s_oct_slot);
         return;
     }
     if (s_first_col > 0) {
-        land_fill(s_left, s_top, s_first_col, s_graph_h, COL_DEAF);
+        land_outline(s_left, deaf_y, s_first_col, s_bottom - deaf_y, COL_BASE);
         if (s_mode == MODE_WATERFALL)       /* 0015 */
             land_fill(s_left, s_wf_top, s_first_col, s_wf_h, COL_DEAF);
         land_blit(s_left, s_left + s_first_col);

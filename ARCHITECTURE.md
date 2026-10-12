@@ -482,3 +482,14 @@ whose floor is 20 Hz, the band it can hear was greyed. Now a band is
 greyed when its TOP EDGE is at or under the floor: 20 Hz is live on USB,
 and on the built-in microphones (80 Hz) 63 Hz is grey and 80 Hz live.
 Found by test/render (0018).
+
+### 0020 -- what a source cannot hear, outlined
+
+0013's dark grey fill for the part of the axis under a source's floor
+read as a fault on screen: an unlabelled near-black block. Now it is an
+empty outline from the baseline to -80 dBFS (`DEAF_DBFS`), in the base
+line's grey: a bar with nothing in it. In the 1/3-octave view each deaf
+band gets its own, in its slot; in the bars and the waterfall's strip,
+where the columns are a pixel wide, one box spans the deaf columns. The
+waterfall under the strip keeps the dark fill, having no level axis for
+a box to stand on. Seen in test/render's `*-builtin.ppm`.
