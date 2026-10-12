@@ -1,8 +1,8 @@
 # Lothesome Audio Analyzer *for M5Tab5*
 
 The M5Stack Tab5's two built-in microphones as a live spectrum: 1024
-samples at 48 kHz, Hamming-windowed, an FFT, and 64 log-spaced bars from
-80 Hz to 24 kHz on a dBFS scale, with peak markers. Only the rows that
+samples at 48 kHz, Hamming-windowed, an FFT, and a log-spaced spectrum from
+80 Hz to 24 kHz, a bar per pixel column, on a dBFS scale, with peak markers. Only the rows that
 changed are redrawn each frame.
 
 ![The analyzer's screen, rendered on a host](docs/mockup.png)
@@ -68,7 +68,7 @@ original README's calibration section explains.
 `main/spectrum.h` has the numbers: `SPECTRUM_MIN_DBFS` / `MAX_DBFS` for
 the vertical range, `ATTACK_TAU` and `RELEASE_TAU` for how fast bars
 rise and fall, `PEAK_FALL_PER_SEC`, `SPECTRUM_FFT_SIZE` (512 for more
-headroom, 2048 for finer bass), `SPECTRUM_BARS`. `main/analyzer.c` has
+headroom, 2048 for finer bass). `main/analyzer.c` has
 the rotation, the backlight and an optional frame cap.
 
 ## Tests

@@ -316,3 +316,20 @@ feckless-drivers and feckless-graphics-handler are -for-m5tab5 now,
 not -for-tab5 (the TODO in b714150). The two git: URLs in
 main/idf_component.yml, and the names in README.md and CLAUDE.md,
 follow. Component names and tags are unchanged.
+
+### 0012 -- a bar per pixel column
+
+The 64 bars become 1170, one per column of the graph, with no gap
+between them. `spectrum_band_n()` takes the bar count, since the count
+is the graph's width; `spectrum_band_at()` keeps `SPECTRUM_BARS` for the
+tests.
+
+A wide bar is now the largest of its bins, not their mean. With 64 bars
+the top bar averaged ~170 bins, so a tone there read some 45 dB under the
+same tone in a one-bin bar; the largest reads a tone at its level
+anywhere. Noise reads a little higher where a column spans several bins.
+
+The display now shows everything the FFT resolves, and no more: a bin is
+46.9 Hz, so below about 9.6 kHz a column is narrower than a bin and is
+interpolated between two. The low end's resolution is
+`SPECTRUM_FFT_SIZE`'s to give, not the display's.

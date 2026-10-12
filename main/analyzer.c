@@ -111,7 +111,7 @@ static float   s_mag[SPECTRUM_FFT_SIZE / 2];
 
 /* ---- layout ---- */
 static int s_w, s_h;
-static int s_left, s_right, s_top, s_bottom, s_graph_w, s_graph_h, s_bar_w;
+static int s_left, s_right, s_top, s_bottom, s_graph_w, s_graph_h;
 static float s_max_hz = SPECTRUM_LOG_MAX_HZ;    /* 0008: the source's Nyquist */
 
 /* The colour of each row, by height above the baseline, and whether a
@@ -119,12 +119,15 @@ static float s_max_hz = SPECTRUM_LOG_MAX_HZ;    /* 0008: the source's Nyquist */
 static uint16_t s_row_colour[MAX_GRAPH_H + 1];
 static bool     s_row_grid[MAX_GRAPH_H + 1];
 
-/* ---- per bar ---- */
-static spectrum_band_t s_band[SPECTRUM_BARS];
-static float s_level[SPECTRUM_BARS];    /* smoothed 0..1, what is drawn */
-static float s_peak[SPECTRUM_BARS];     /* peak hold 0..1 */
-static int   s_prev_h[SPECTRUM_BARS];   /* last bar height, px */
-static int   s_prev_peak_y[SPECTRUM_BARS];
+/* ---- per bar ----
+ * 0012: a bar is one pixel column of the graph, s_graph_w of them, so
+ * the axis shows every bin the FFT has rather than 64 averages of them.
+ * LAND_W bounds the count. */
+static spectrum_band_t s_band[LAND_W];
+static float s_level[LAND_W];    /* smoothed 0..1, what is drawn */
+static float s_peak[LAND_W];     /* peak hold 0..1 */
+static int   s_prev_h[LAND_W];   /* last bar height, px */
+static int   s_prev_peak_y[LAND_W];
 
 static void freq_label(float hz, char *out, size_t out_len)
 {
@@ -456,7 +459,7 @@ static void render(float dt, int *x0, int *x1)
 {
     int dirty_l = s_w, dirty_r = 0;
 
-    for (int b = 0; b < SPECTRUM_BARS; b++) {
+    for (int b = 0; b < s_graph_w; b++) {
         const float mag = spectrum_band_mag(&s_band[b], s_mag);
         spectrum_ballistics(spectrum_frac(spectrum_dbfs(mag)), dt, &s_level[b], &s_peak[b]);
 
@@ -478,7 +481,7 @@ static void render(float dt, int *x0, int *x1)
         if (old_peak_y > y_bot) y_bot = old_peak_y;
 
         if (y_top <= y_bot) {
-            const int xs = s_left + b * s_bar_w + 1, w = s_bar_w - 2;
+            const int xs = s_left + b, w = 1;    /* 0012: a column, no gap */
             repaint_rows(xs, w, y_top, y_bot, bar_top_y, peak_y);
             if (xs < dirty_l)     dirty_l = xs;
             if (xs + w > dirty_r) dirty_r = xs + w;
@@ -506,8 +509,8 @@ static void draw_source(int src)
 static void layout_for_rate(uint32_t rate)
 {
     s_max_hz = (float)rate / 2.0f;
-    for (int b = 0; b < SPECTRUM_BARS; b++) {
-        s_band[b] = spectrum_band_at(b, (float)rate);
+    for (int b = 0; b < s_graph_w; b++) {
+        s_band[b] = spectrum_band_n(b, s_graph_w, (float)rate);
         s_level[b] = s_peak[b] = 0.0f;
         s_prev_h[b] = 0;
         s_prev_peak_y[b] = s_bottom;
@@ -586,12 +589,11 @@ void app_main(void)
     s_graph_h = s_bottom - s_top;
     if (s_graph_h > MAX_GRAPH_H) s_graph_h = MAX_GRAPH_H;
     s_bottom = s_top + s_graph_h;
-    s_bar_w = s_graph_w / SPECTRUM_BARS;
 
     layout_for_rate(SPECTRUM_SAMPLE_RATE);     /* 0008: was the bands and draw_static() */
     ESP_ERROR_CHECK(lcd_backlight_set(ANALYZER_BACKLIGHT));
-    ESP_LOGI(TAG, "%dx%d, graph %dx%d, %d bars of %d px", s_w, s_h,
-             s_graph_w, s_graph_h, SPECTRUM_BARS, s_bar_w);
+    ESP_LOGI(TAG, "%dx%d, graph %dx%d, a bar per column", s_w, s_h,
+             s_graph_w, s_graph_h);
 
     int64_t last_us = esp_timer_get_time();
     int64_t report_us = last_us;

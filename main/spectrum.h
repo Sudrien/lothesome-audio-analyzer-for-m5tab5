@@ -112,13 +112,18 @@ typedef struct {
  * bars span 80 Hz to that rate's Nyquist, so each bin is rate/N wide and
  * the top of the axis moves with it. spectrum_band() is this at 48 kHz.
  */
-static inline spectrum_band_t spectrum_band_at(int bar, float rate)
+/*
+ * 0012: for any number of bars. The display has one bar per pixel column
+ * of the graph, so the count is the graph's width, known only at run
+ * time; spectrum_band_at() is this at SPECTRUM_BARS.
+ */
+static inline spectrum_band_t spectrum_band_n(int bar, int bars, float rate)
 {
     const float hz_per_bin  = rate / (float)SPECTRUM_FFT_SIZE;
     const int   usable_bins = SPECTRUM_FFT_SIZE / 2;
     const float ratio       = (rate / 2.0f) / SPECTRUM_LOG_MIN_HZ;
-    const float lo_f = SPECTRUM_LOG_MIN_HZ * powf(ratio, (float)bar / SPECTRUM_BARS);
-    const float hi_f = SPECTRUM_LOG_MIN_HZ * powf(ratio, (float)(bar + 1) / SPECTRUM_BARS);
+    const float lo_f = SPECTRUM_LOG_MIN_HZ * powf(ratio, (float)bar / (float)bars);
+    const float hi_f = SPECTRUM_LOG_MIN_HZ * powf(ratio, (float)(bar + 1) / (float)bars);
     const float lo_b = lo_f / hz_per_bin;
     const float hi_b = hi_f / hz_per_bin;
 
@@ -134,13 +139,23 @@ static inline spectrum_band_t spectrum_band_at(int bar, float rate)
     return b;
 }
 
+static inline spectrum_band_t spectrum_band_at(int bar, float rate)
+{
+    return spectrum_band_n(bar, SPECTRUM_BARS, rate);
+}
+
 static inline spectrum_band_t spectrum_band(int bar)
 {
     return spectrum_band_at(bar, (float)SPECTRUM_SAMPLE_RATE);
 }
 
 /* One bar's magnitude from the FFT's magnitudes (`mag`, at least
- * FFT_SIZE/2 of them). */
+ * FFT_SIZE/2 of them).
+ *
+ * 0012: a wide bar is the largest of its bins, not their mean. The mean
+ * read a tone lower the more bins shared its bar, so the same tone sat at
+ * different heights across the axis; the largest reads it at its level
+ * anywhere, as a single bin would. */
 static inline float spectrum_band_mag(const spectrum_band_t *b, const float *mag)
 {
     if (b->narrow) {
@@ -148,9 +163,9 @@ static inline float spectrum_band_mag(const spectrum_band_t *b, const float *mag
         const float t  = b->centre_bin - (float)lo;
         return mag[lo] * (1.0f - t) + mag[lo + 1] * t;
     }
-    float sum = 0.0f;
-    for (int i = b->lo_bin; i <= b->hi_bin; i++) sum += mag[i];
-    return sum / (float)(b->hi_bin - b->lo_bin + 1);
+    float m = 0.0f;
+    for (int i = b->lo_bin; i <= b->hi_bin; i++) if (mag[i] > m) m = mag[i];
+    return m;
 }
 
 /* Magnitude to dBFS. The 1e-9 keeps log10 off zero: silence reads -180. */

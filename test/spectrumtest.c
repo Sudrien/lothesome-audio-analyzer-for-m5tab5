@@ -212,6 +212,36 @@ static void test_rates(void)
           a.centre_bin == b.centre_bin, "spectrum_band() is not the 48 kHz case");
 }
 
+/* 0012: a bar per pixel column. The graph is 1170 columns wide; the
+ * columns still run 80 Hz to Nyquist in order, and a tone reads its
+ * level in a wide column, not its level shared among the column's bins. */
+static void test_columns(void)
+{
+    const int cols = 1170;
+    int prev_hi = 0, ok = 1;
+    float prev_centre = 0;
+    for (int b = 0; b < cols; b++) {
+        const spectrum_band_t s = spectrum_band_n(b, cols, 48000.0f);
+        if (s.narrow) { ok &= s.centre_bin >= prev_centre; prev_centre = s.centre_bin; }
+        else          { ok &= s.lo_bin >= 1 && s.hi_bin >= s.lo_bin &&
+                              s.hi_bin <= N / 2 - 1 && s.hi_bin >= prev_hi;
+                        prev_hi = s.hi_bin; }
+    }
+    CHECK(ok, "columns out of order");
+    const spectrum_band_t top = spectrum_band_n(cols - 1, cols, 48000.0f);
+    CHECK(!top.narrow && top.hi_bin == N / 2 - 1, "top column short of Nyquist");
+
+    static float mag[N / 2];
+    const spectrum_band_t w = spectrum_band(SPECTRUM_BARS - 1);
+    mag[w.lo_bin] = 123.0f;
+    CHECK(spectrum_band_mag(&w, mag) == 123.0f, "a tone in a wide bar read %f",
+          spectrum_band_mag(&w, mag));
+    const spectrum_band_t a = spectrum_band_at(10, 44100.0f),
+                          b = spectrum_band_n(10, SPECTRUM_BARS, 44100.0f);
+    CHECK(a.narrow == b.narrow && a.lo_bin == b.lo_bin && a.hi_bin == b.hi_bin &&
+          a.centre_bin == b.centre_bin, "spectrum_band_at() is not SPECTRUM_BARS bars");
+}
+
 int main(void)
 {
     test_rates();
@@ -220,6 +250,7 @@ int main(void)
     test_scale();
     test_bands();
     test_ballistics();
+    test_columns();
     test_axes();
     printf("spectrumtest: %d checks, %d failures\n", checks, failures);
     return failures ? 1 : 0;
