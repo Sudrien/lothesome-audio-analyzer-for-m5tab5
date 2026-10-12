@@ -419,6 +419,64 @@ static void test_waterfall(void)
     }
 }
 
+/* 0016: one-third octaves. The centres are the standard's; a tone at
+ * a band's centre reads its level there; flat power per bin -- white
+ * noise -- rises 1 dB a band, so pink reads flat; Fast and Slow settle. */
+static void test_octaves(void)
+{
+    CHECK(fabsf(spectrum_oct_centre(0) - 19.953f) < 0.01f, "first centre %f", spectrum_oct_centre(0));
+    CHECK(fabsf(spectrum_oct_centre(17) - 1000.0f) < 0.01f, "1 kHz not band 17");
+    CHECK(fabsf(spectrum_oct_centre(30) - 19953.0f) < 1.0f, "last centre %f", spectrum_oct_centre(30));
+
+    /* A bin-centred tone in a band of the main FFT: 1.25 kHz band, bin 27
+     * (1266 Hz), and 8 kHz band (bin 171, 8016 Hz). */
+    static float x[N];
+    static float mag[N / 2];
+    const int tests[][2] = { { 18, 27 }, { 26, 171 } };
+    for (int t = 0; t < 2; t++) {
+        tone(x, tests[t][1], -20.0);
+        for (int k = 1; k < N / 2; k++) mag[k] = (float)dft_mag(x, k);
+        const spectrum_oct_t o = spectrum_oct_band(tests[t][0], 48000.0f);
+        CHECK(!o.bass && !o.partial, "band %d path", tests[t][0]);
+        const float db = (float)(10.0 * log10(spectrum_oct_ms(&o, mag) /
+                         ((double)SPECTRUM_SAMPLE_FULL_SCALE * SPECTRUM_SAMPLE_FULL_SCALE / 2.0)));
+        CHECK(fabsf(db + 20.0f) < 0.3f, "band %d tone read %.2f", tests[t][0], db);
+    }
+
+    /* White: every bin the same power. A band's power is its width. */
+    for (int k = 0; k < N / 2; k++) mag[k] = 1000.0f;
+    double prev = 0;
+    int ok = 1;
+    for (int b = 0; b < SPECTRUM_OCT_BANDS - 1; b++) {
+        const spectrum_oct_t o = spectrum_oct_band(b, 48000.0f);
+        const double db = 10.0 * log10(spectrum_oct_ms(&o, mag));
+        if (b > 0) {
+            const spectrum_oct_t p = spectrum_oct_band(b - 1, 48000.0f);
+            /* Across the split the bin width changes 16x, -12.04 dB of
+             * power a bin; within either FFT each band is 1 dB up. */
+            const double want = (o.bass == p.bass) ? 1.0 : 1.0 - 10.0 * log10(16.0);
+            if (fabs(db - prev - want) > 0.05) {
+                ok = 0;
+                printf("  band %d step %.3f, want %.3f\n", b, db - prev, want);
+            }
+        }
+        prev = db;
+    }
+    CHECK(ok, "white noise not 1 dB a band");
+    CHECK(spectrum_oct_band(18, 48000.0f).bass == false &&
+          spectrum_oct_band(17, 48000.0f).bass == true, "split not between 1 and 1.25 kHz");
+    CHECK(spectrum_oct_band(30, 44100.0f).partial && !spectrum_oct_band(30, 48000.0f).partial,
+          "20 kHz band partial at the wrong rates");
+
+    float e = 0.0f;
+    for (int i = 0; i < 100; i++) spectrum_oct_weight(&e, 1.0f, 0.01f, SPECTRUM_FAST_TAU);
+    CHECK(e > 0.9996f, "Fast not settled in 1 s: %f", e);
+    float a = 0.0f, b = 0.0f;
+    spectrum_oct_weight(&a, 1.0f, 0.5f, SPECTRUM_SLOW_TAU);
+    for (int i = 0; i < 50; i++) spectrum_oct_weight(&b, 1.0f, 0.01f, SPECTRUM_SLOW_TAU);
+    CHECK(fabsf(a - b) < 1e-4f, "Slow depends on frame rate");
+}
+
 int main(void)
 {
     test_rates();
@@ -432,6 +490,7 @@ int main(void)
     test_weighting();
     test_meter();
     test_waterfall();
+    test_octaves();
     test_axes();
     printf("spectrumtest: %d checks, %d failures\n", checks, failures);
     return failures ? 1 : 0;

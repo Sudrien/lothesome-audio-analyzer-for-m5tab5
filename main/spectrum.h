@@ -508,6 +508,97 @@ static inline int spectrum_wf_rows(float *acc, float dt, float rows_per_sec)
     return n;
 }
 
+/* ---- 0016: one-third octaves ----
+ *
+ * The 31 bands of IEC 61260-1 from 20 Hz to 20 kHz, base ten: band k
+ * (0..30) is centred on 1000 * 10^((k - 17) / 10) Hz, its edges a
+ * twentieth of a decade either side. Nominal labels round those
+ * (19.95 Hz is "20"); the arithmetic uses the exact ones.
+ *
+ * A band's level is the POWER in it, from the FFT bins it covers --
+ * each bin weighted by how much of its width lies inside the band, so a
+ * band narrower than a few bins still gets its share and no more. That
+ * is what makes pink noise read flat, as a real-time analyzer must; the
+ * bars' largest-bin rule (0012) would make it rise 3 dB an octave.
+ * Bands wholly under the bass split read the bass FFT, like the bars.
+ *
+ * Power in dB re a full-scale sine, as the meter: by Parseval, a real
+ * sine of amplitude A puts N * A^2 * sum(w^2) / 4 into the positive
+ * bins, so mean square = 2 * sum|X|^2 / (N * sum(w^2)).
+ */
+#define SPECTRUM_OCT_BANDS     (31)
+#define SPECTRUM_OCT_FIRST_K   (-17)            /* 1000 * 10^(-1.7) = 19.95 Hz */
+#define SPECTRUM_SLOW_TAU      (1.0)            /* s, IEC 61672 S */
+
+static inline float spectrum_oct_centre(int band)
+{
+    return 1000.0f * powf(10.0f, (float)(band + SPECTRUM_OCT_FIRST_K) / 10.0f);
+}
+
+typedef struct {
+    bool  bass;             /* read the bass FFT */
+    float lo_b, hi_b;       /* the band's edges, in bins of that FFT */
+    bool  partial;          /* the top edge is past Nyquist: the band is short */
+} spectrum_oct_t;
+
+static inline spectrum_oct_t spectrum_oct_band(int band, float rate)
+{
+    const float fc = spectrum_oct_centre(band);
+    const float lo = fc * powf(10.0f, -0.05f), hi = fc * powf(10.0f, 0.05f);
+    spectrum_oct_t o = { 0 };
+    o.bass = hi <= spectrum_bass_split_hz(rate);
+    const float df = rate / (o.bass ? (float)SPECTRUM_BASS_DECIM : 1.0f) / (float)SPECTRUM_FFT_SIZE;
+    o.lo_b = lo / df;
+    o.hi_b = hi / df;
+    o.partial = hi > rate / 2.0f;
+    if (o.hi_b > (float)(SPECTRUM_FFT_SIZE / 2) - 0.5f) o.hi_b = (float)(SPECTRUM_FFT_SIZE / 2) - 0.5f;
+    return o;
+}
+
+/* The Hamming window's sum of squares over N, for the power scale. */
+static inline float spectrum_hamming_ss(void)
+{
+    static float ss;
+    if (ss == 0.0f) {
+        double a = 0.0;
+        for (int n = 0; n < SPECTRUM_FFT_SIZE; n++) {
+            const double w = spectrum_hamming(n, SPECTRUM_FFT_SIZE);
+            a += w * w;
+        }
+        ss = (float)a;
+    }
+    return ss;
+}
+
+/* The band's mean square, at 24-bit scale, from that FFT's magnitudes. */
+static inline float spectrum_oct_ms(const spectrum_oct_t *o, const float *mag)
+{
+    if (o->hi_b <= o->lo_b) return 0.0f;
+    double p = 0.0;
+    int k0 = (int)floorf(o->lo_b + 0.5f), k1 = (int)floorf(o->hi_b + 0.5f);
+    if (k0 < 1) k0 = 1;
+    if (k1 > SPECTRUM_FFT_SIZE / 2 - 1) k1 = SPECTRUM_FFT_SIZE / 2 - 1;
+    for (int k = k0; k <= k1; k++) {
+        const float a = fmaxf(o->lo_b, (float)k - 0.5f), b = fminf(o->hi_b, (float)k + 0.5f);
+        if (b > a) p += (double)(b - a) * (double)mag[k] * (double)mag[k];
+    }
+    return (float)(2.0 * p / ((double)SPECTRUM_FFT_SIZE * spectrum_hamming_ss()));
+}
+
+/* Mean square to dB re a full-scale sine, on the bars' 0..1 scale. */
+static inline float spectrum_oct_frac(float ms)
+{
+    const double ref = (double)SPECTRUM_SAMPLE_FULL_SCALE * SPECTRUM_SAMPLE_FULL_SCALE / 2.0;
+    return spectrum_frac((float)(10.0 * log10((double)ms / ref + 1e-18)));
+}
+
+/* Fast or Slow: the exponential time weighting of a mean square, over a
+ * frame of dt seconds, framerate-independent like the ballistics. */
+static inline void spectrum_oct_weight(float *e, float ms, float dt, double tau)
+{
+    *e += (ms - *e) * (float)(1.0 - exp(-(double)dt / tau));
+}
+
 #ifdef __cplusplus
 }
 #endif

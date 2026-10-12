@@ -65,13 +65,25 @@ low-passed and decimated to 3 kHz: 2.9 Hz bins instead of 46.9, over a
 part of the axis a source cannot hear is greyed: below 80 Hz for the
 built-in microphones and the jack, nothing for a USB microphone.
 
+## The views
+
+Three buttons, top right: **BARS** (a bar per pixel column), **1/3 OCT**
+and **FALL**.
+
+**1/3 OCT** is a real-time analyzer: the 31 standard bands from 20 Hz to
+20 kHz, each the power in its band, so pink noise reads flat when the
+sound is flat. **FAST/SLOW** under the buttons picks the time weighting,
+125 ms or 1 s; Slow is the steadier one for reading pink noise. The
+20 kHz band is grey when the source's Nyquist cuts it short (a 44.1 kHz
+microphone), and the bottom two bands are coarse: 20 and 25 Hz bands
+are narrower than two bins of the bass FFT.
+
 ## The waterfall
 
-**WATERFALL**, top right, shrinks the bars to a strip and scrolls the
+**FALL**, shrinks the bars to a strip and scrolls the
 last ten seconds down under them, newest at the top, on the same
 frequency axis: 40 rows a second, coloured black through purple and
-orange to pale yellow by level. **SPECTRUM** puts the full-height bars
-back. Left of 1.2 kHz the picture comes from the bass FFT and is
+orange to pale yellow by level. Left of 1.2 kHz the picture comes from the bass FFT and is
 smeared over a third of a second, which is the price of its resolution.
 
 ## The meter

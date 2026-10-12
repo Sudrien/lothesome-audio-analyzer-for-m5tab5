@@ -418,3 +418,31 @@ them and the fps moves under them. Touch is turned to 270 to match
 `landmap.h`; a press that lands on a button chooses that mode and
 cannot also reset the meter, whose half-second hold still works
 anywhere else.
+
+### 0016 -- one-third octaves
+
+A third view, between the bars and the waterfall: the 31 bands of IEC
+61260-1, base ten, 20 Hz to 20 kHz, drawn as evenly spaced bars with the
+octave centres labelled.
+
+A band is the POWER in it, not the largest bin (0012's rule for the
+bars): every bin it covers, weighted by how much of that bin's width is
+inside the band, scaled by Parseval to dB re a full-scale sine like the
+meter. That is what makes pink noise flat. `test/spectrumtest.c` checks
+the centres, a tone's level in a band of the main FFT, and that white
+noise rises exactly 1 dB a band within each FFT. Bands wholly under the
+1.2 kHz split read the bass FFT, so 1 kHz is a bass band and 1.25 kHz
+the first of the main one.
+
+Each band's mean square is time-weighted Fast or Slow (IEC 61672,
+125 ms or 1 s) in place of the bars' cosmetic attack and release; the
+peak marker holds and sinks as the bars' does. A FAST/SLOW button under
+the mode buttons switches it, and the averages carry across the switch.
+
+The mode buttons are three of 112 px, BARS / 1/3 OCT / FALL: "1/3 OCT"
+is 98 px of Ark12 at label scale. A band whose top edge is past the
+source's Nyquist is drawn grey: the 20 kHz band at 44.1 kHz. A band
+whose centre is under the source's floor is greyed like the columns.
+
+`render()`'s bar painting moved into `paint_bar()`, shared by the
+columns and the bands, and `repaint_rows()` takes the grey.

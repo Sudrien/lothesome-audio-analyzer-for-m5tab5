@@ -103,10 +103,19 @@ static const char *TAG = "analyzer";
 #define STRIP_H             (140)    /* the bars, in waterfall mode */
 #define WF_GAP              (8)
 #define KEY_W               (16)     /* the colour key, right of the graph */
-#define MODE_X              (LAND_W - 296)
+#define MODE_COUNT          (3)      /* 0016: BARS, 1/3 OCT, FALL */
+#define MODE_W              (112)    /* each button: "1/3 OCT" is 98 px of Ark12 */
+#define MODE_X              (LAND_W - 10 - MODE_COUNT * MODE_W)
 #define MODE_Y              (6)
 #define MODE_H              (36)
-#define MODE_W              (143)    /* each of the two buttons */
+
+/* 0016: the 1/3-octave view's Fast/Slow switch, under the mode buttons. */
+#define WEIGHT_X            (MODE_X)
+#define WEIGHT_Y            (74)
+#define WEIGHT_W            (MODE_W)
+#define WEIGHT_H            (26)
+#define OCT_GAP             (6)      /* between bands */
+#define COL_PARTIAL         ((uint16_t)0x7BEF)   /* a band cut by Nyquist */
 
 #define MAX_GRAPH_H         (800)   /* bound for the row tables */
 
@@ -170,12 +179,21 @@ static int s_w, s_h;
 static int s_left, s_right, s_top, s_bottom, s_graph_w, s_graph_h;
 static int s_axis_y;                 /* 0015: where the frequency labels hang */
 
-typedef enum { MODE_SPECTRUM, MODE_WATERFALL } view_mode_t;
+/* 0016: in the buttons' order. */
+typedef enum { MODE_SPECTRUM, MODE_OCT, MODE_WATERFALL } view_mode_t;
 static view_mode_t s_mode = MODE_SPECTRUM;      /* 0015 */
 static int    s_wf_top, s_wf_h;
 static float  s_wf_frac[LAND_W];           /* this frame's level per column, unsmoothed */
 static float  s_wf_acc;
 static uint16_t s_heat[256];               /* spectrum_heat_rgb(), as 565 */
+
+/* 0016: the 1/3-octave view. Its bands reuse s_level/s_peak/s_prev_*
+ * by index; s_oct_e is each band's time-weighted mean square. */
+static spectrum_oct_t s_oct[SPECTRUM_OCT_BANDS];
+static float s_oct_e[SPECTRUM_OCT_BANDS];
+static bool  s_oct_deaf[SPECTRUM_OCT_BANDS];
+static bool  s_oct_slow;                   /* Fast by default */
+static int   s_oct_slot;                   /* px a band, gap included */
 static float s_max_hz = SPECTRUM_LOG_MAX_HZ;    /* 0008: the source's Nyquist */
 static int   s_first_col;    /* 0013: the first column the source can hear */
 
@@ -291,10 +309,10 @@ static void set_geometry(void)
 /* 0015: the two mode buttons, top right; the chosen one lit. */
 static void draw_mode_buttons(void)
 {
-    static const char *const names[2] = { "SPECTRUM", "WATERFALL" };
+    static const char *const names[MODE_COUNT] = { "BARS", "1/3 OCT", "FALL" };   /* 0016 */
     const int label_h = ARK12_H * LABEL_SCALE;
-    land_fill(MODE_X - 1, MODE_Y - 1, 2 * MODE_W + 2, MODE_H + 2, COL_BASE);
-    for (int i = 0; i < 2; i++) {
+    land_fill(MODE_X - 1, MODE_Y - 1, MODE_COUNT * MODE_W + 2, MODE_H + 2, COL_BASE);
+    for (int i = 0; i < MODE_COUNT; i++) {
         const bool on = (int)s_mode == i;
         const int x = MODE_X + i * MODE_W;
         land_fill(x, MODE_Y, MODE_W, MODE_H, on ? COL_LABEL : COL_BLACK);
@@ -302,6 +320,17 @@ static void draw_mode_buttons(void)
         land_text(x + (MODE_W - tw) / 2, MODE_Y + (MODE_H - label_h) / 2, names[i],
                   LABEL_SCALE, on ? COL_BLACK : COL_LABEL);
     }
+}
+
+/* 0016: the Fast/Slow switch, shown only in the 1/3-octave view. */
+static void draw_weight_button(void)
+{
+    const char *t = s_oct_slow ? "SLOW" : "FAST";
+    const int label_h = ARK12_H * LABEL_SCALE, tw = land_text_w(t, LABEL_SCALE);
+    land_fill(WEIGHT_X - 1, WEIGHT_Y - 1, WEIGHT_W + 2, WEIGHT_H + 2, COL_BASE);
+    land_fill(WEIGHT_X, WEIGHT_Y, WEIGHT_W, WEIGHT_H, COL_BLACK);
+    land_text(WEIGHT_X + (WEIGHT_W - tw) / 2, WEIGHT_Y + (WEIGHT_H - label_h) / 2, t,
+              LABEL_SCALE, COL_LABEL);
 }
 
 /* 0015: the waterfall's time labels and its colour key. */
@@ -368,6 +397,26 @@ static void draw_static(void)
     }
     land_text(10, s_top - label_h - 4, "dBFS", LABEL_SCALE, COL_LABEL);
 
+    /* 0016: the 1/3-octave view labels its octave centres, under the
+     * bands, which are evenly spaced slots rather than the log axis. */
+    if (s_mode == MODE_OCT) {
+        static const char *const oct_label[SPECTRUM_OCT_BANDS] = {
+            [2] = "31.5", [5] = "63", [8] = "125", [11] = "250", [14] = "500",
+            [17] = "1k", [20] = "2k", [23] = "4k", [26] = "8k", [29] = "16k",
+        };
+        for (int b = 0; b < SPECTRUM_OCT_BANDS; b++) {
+            if (!oct_label[b]) continue;
+            const int tw = land_text_w(oct_label[b], LABEL_SCALE);
+            land_text(s_left + b * s_oct_slot + s_oct_slot / 2 - tw / 2, s_axis_y + 10,
+                      oct_label[b], LABEL_SCALE, COL_LABEL);
+        }
+        hline(s_left, s_bottom, s_graph_w, COL_BASE);
+        draw_weight_button();
+        draw_mode_buttons();
+        gfx_blit(0, gfx_h());
+        return;
+    }
+
     /* Frequency labels along the log axis. */
     static const float label_hz[] = { 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000 };
     for (size_t i = 0; i < sizeof(label_hz) / sizeof(label_hz[0]); i++) {
@@ -393,7 +442,8 @@ static void draw_static(void)
  * 0006: in panel terms the bar is w panel rows, and its landscape rows
  * y_top..y_bot are one contiguous span of each of them -- so the colours
  * are worked out once into s_line and copied w times. */
-static void repaint_rows(int xs, int w, int y_top, int y_bot, int bar_top_y, int peak_y)
+static void repaint_rows(int xs, int w, int y_top, int y_bot, int bar_top_y, int peak_y,
+                         bool partial)
 {
     if (y_top < s_top)        y_top = s_top;
     if (y_bot > s_bottom - 1) y_bot = s_bottom - 1;
@@ -401,7 +451,8 @@ static void repaint_rows(int xs, int w, int y_top, int y_bot, int bar_top_y, int
     for (int y = y_top; y <= y_bot; y++) {
         uint16_t c;
         if (y == peak_y)                        c = COL_PEAK;
-        else if (y >= bar_top_y)                c = s_row_colour[s_bottom - y];
+        else if (y >= bar_top_y)                c = partial ? COL_PARTIAL       /* 0016 */
+                                                            : s_row_colour[s_bottom - y];
         else if (s_row_grid[s_bottom - y])      c = COL_GRID;
         else                                    c = COL_BLACK;
         s_line[y] = c;
@@ -637,16 +688,12 @@ static void fft(void)
 /* One frame of bars. Returns the dirty landscape COLUMN range through
  * *x0, *x1 (x1 exclusive; x0 == x1 when nothing changed) -- 0006: the
  * columns, because columns are what map to contiguous panel rows. */
-static void render(float dt, int *x0, int *x1)
+/* 0016: bar b at s_level[b] and s_peak[b], `w` px wide from xs: only
+ * the rows that changed, widening [*dl, *dr) by what it touched. Was
+ * the body of render()'s loop. */
+static void paint_bar(int b, int xs, int w, bool partial, int *dl, int *dr)
 {
-    int dirty_l = s_w, dirty_r = 0;
-
-    for (int b = s_first_col; b < s_graph_w; b++) {
-        const float mag = spectrum_band_mag(&s_band[b], s_band[b].bass ? s_bass_mag : s_mag);
-        const float target = spectrum_frac(spectrum_dbfs(mag));
-        s_wf_frac[b] = target;              /* 0015: the waterfall takes it raw */
-        spectrum_ballistics(target, dt, &s_level[b], &s_peak[b]);
-
+    {
         const int new_h     = (int)(s_level[b] * (float)s_graph_h);
         const int bar_top_y = s_bottom - new_h;
         int peak_y = s_bottom - (int)(s_peak[b] * (float)s_graph_h);
@@ -665,13 +712,46 @@ static void render(float dt, int *x0, int *x1)
         if (old_peak_y > y_bot) y_bot = old_peak_y;
 
         if (y_top <= y_bot) {
-            const int xs = s_left + b, w = 1;    /* 0012: a column, no gap */
-            repaint_rows(xs, w, y_top, y_bot, bar_top_y, peak_y);
-            if (xs < dirty_l)     dirty_l = xs;
-            if (xs + w > dirty_r) dirty_r = xs + w;
+            repaint_rows(xs, w, y_top, y_bot, bar_top_y, peak_y, partial);
+            if (xs < *dl)     *dl = xs;
+            if (xs + w > *dr) *dr = xs + w;
         }
         s_prev_h[b]      = new_h;
         s_prev_peak_y[b] = peak_y;
+    }
+}
+
+/* 0016: the 1/3-octave bands: power, Fast or Slow, and a peak that
+ * holds and sinks as the bars' does. No attack/release -- the time
+ * weighting is the standard's, not a look. */
+static void render_oct(float dt, int *dl, int *dr)
+{
+    const double tau = s_oct_slow ? SPECTRUM_SLOW_TAU : SPECTRUM_FAST_TAU;
+    for (int b = 0; b < SPECTRUM_OCT_BANDS; b++) {
+        if (s_oct_deaf[b]) continue;
+        const float ms = spectrum_oct_ms(&s_oct[b], s_oct[b].bass ? s_bass_mag : s_mag);
+        spectrum_oct_weight(&s_oct_e[b], ms, dt, tau);
+        s_level[b] = spectrum_oct_frac(s_oct_e[b]);
+        s_peak[b]  = fmaxf(s_level[b], s_peak[b] - SPECTRUM_PEAK_FALL_PER_SEC * dt);
+        paint_bar(b, s_left + b * s_oct_slot + OCT_GAP / 2, s_oct_slot - OCT_GAP,
+                  s_oct[b].partial, dl, dr);
+    }
+}
+
+static void render(float dt, int *x0, int *x1)
+{
+    int dirty_l = s_w, dirty_r = 0;
+
+    if (s_mode == MODE_OCT) {
+        render_oct(dt, &dirty_l, &dirty_r);
+    } else {
+        for (int b = s_first_col; b < s_graph_w; b++) {
+            const float mag = spectrum_band_mag(&s_band[b], s_band[b].bass ? s_bass_mag : s_mag);
+            const float target = spectrum_frac(spectrum_dbfs(mag));
+            s_wf_frac[b] = target;              /* 0015: the waterfall takes it raw */
+            spectrum_ballistics(target, dt, &s_level[b], &s_peak[b]);
+            paint_bar(b, s_left + b, 1, false, &dirty_l, &dirty_r);   /* 0012: a column, no gap */
+        }
     }
 
     *x0 = dirty_l;
@@ -737,7 +817,25 @@ static void layout_for(uint32_t rate, int src)
         s_prev_h[b] = 0;
         s_prev_peak_y[b] = s_bottom;
     }
+    /* 0016: the 1/3-octave bands, for this rate and this source. A band
+     * whose centre the source cannot hear is greyed, like the columns. */
+    s_oct_slot = s_graph_w / SPECTRUM_OCT_BANDS;
+    for (int b = 0; b < SPECTRUM_OCT_BANDS; b++) {
+        s_oct[b] = spectrum_oct_band(b, (float)rate);
+        s_oct_e[b] = 0.0f;
+        s_oct_deaf[b] = spectrum_oct_centre(b) < k_source_floor_hz[src];
+    }
     draw_static();
+    if (s_mode == MODE_OCT) {
+        int last_deaf = -1;
+        for (int b = 0; b < SPECTRUM_OCT_BANDS; b++) if (s_oct_deaf[b]) last_deaf = b;
+        if (last_deaf >= 0) {
+            const int w = (last_deaf + 1) * s_oct_slot;
+            land_fill(s_left, s_top, w, s_graph_h, COL_DEAF);
+            land_blit(s_left, s_left + w);
+        }
+        return;
+    }
     if (s_first_col > 0) {
         land_fill(s_left, s_top, s_first_col, s_graph_h, COL_DEAF);
         if (s_mode == MODE_WATERFALL)       /* 0015 */
@@ -919,16 +1017,25 @@ void app_main(void)
                 press_us = t3;
                 /* 0015: a press on a mode button picks that mode. */
                 if (ty >= MODE_Y && ty < MODE_Y + MODE_H &&
-                    tx >= MODE_X && tx < MODE_X + 2 * MODE_W) {
+                    tx >= MODE_X && tx < MODE_X + MODE_COUNT * MODE_W) {
                     press_on_mode = true;
-                    const view_mode_t want = tx < MODE_X + MODE_W ? MODE_SPECTRUM : MODE_WATERFALL;
+                    const view_mode_t want = (view_mode_t)((tx - MODE_X) / MODE_W);   /* 0016 */
                     if (want != s_mode && shown_source >= 0) {
                         s_mode = want;
                         layout_for(shown_rate, shown_source);
                         draw_source(shown_source);
                         meter_us = 0;       /* the repaint wiped the meter line */
-                        ESP_LOGI(TAG, "mode: %s", want == MODE_WATERFALL ? "waterfall" : "spectrum");
+                        ESP_LOGI(TAG, "mode: %s", want == MODE_WATERFALL ? "waterfall" :
+                                                  want == MODE_OCT ? "1/3 octave" : "bars");
                     }
+                } else if (s_mode == MODE_OCT && ty >= WEIGHT_Y && ty < WEIGHT_Y + WEIGHT_H &&
+                           tx >= WEIGHT_X && tx < WEIGHT_X + WEIGHT_W) {
+                    /* 0016: Fast <-> Slow. The averages carry on, so the
+                     * bars glide to the new weighting rather than jump. */
+                    press_on_mode = true;
+                    s_oct_slow = !s_oct_slow;
+                    draw_weight_button();
+                    land_blit(WEIGHT_X - 1, WEIGHT_X + WEIGHT_W + 1);
                 }
             } else if (!press_on_mode && !reset_done && t3 - press_us >= RESET_HOLD_US) {
                 s_meter_reset_req = true;
