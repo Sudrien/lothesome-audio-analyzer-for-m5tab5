@@ -818,12 +818,14 @@ static void layout_for(uint32_t rate, int src)
         s_prev_peak_y[b] = s_bottom;
     }
     /* 0016: the 1/3-octave bands, for this rate and this source. A band
-     * whose centre the source cannot hear is greyed, like the columns. */
+     * whose centre the source cannot hear is greyed, like the columns.
+     * 0018: whose TOP EDGE -- the 20 Hz band is centred on 19.95 Hz, so a
+     * centre test greyed it for a source that hears 20 Hz. */
     s_oct_slot = s_graph_w / SPECTRUM_OCT_BANDS;
     for (int b = 0; b < SPECTRUM_OCT_BANDS; b++) {
         s_oct[b] = spectrum_oct_band(b, (float)rate);
         s_oct_e[b] = 0.0f;
-        s_oct_deaf[b] = spectrum_oct_centre(b) < k_source_floor_hz[src];
+        s_oct_deaf[b] = spectrum_oct_centre(b) * powf(10.0f, 0.05f) <= k_source_floor_hz[src];
     }
     draw_static();
     if (s_mode == MODE_OCT) {

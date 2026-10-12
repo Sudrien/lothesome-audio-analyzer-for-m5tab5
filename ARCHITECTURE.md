@@ -473,3 +473,12 @@ It is how the screen was first seen before flashing, and it found
 0019's bug the first time it ran. Not in CI: the Ark12 font comes from
 feckless-graphics-handler, which is in `managed_components` only after
 an `idf.py build`; `ARK12=` points it elsewhere.
+
+### 0019 -- the 20 Hz band, heard
+
+0016 greyed a 1/3-octave band when its centre was under the source's
+floor. The 20 Hz band is centred on 19.95 Hz, so with a USB microphone,
+whose floor is 20 Hz, the band it can hear was greyed. Now a band is
+greyed when its TOP EDGE is at or under the floor: 20 Hz is live on USB,
+and on the built-in microphones (80 Hz) 63 Hz is grey and 80 Hz live.
+Found by test/render (0018).
