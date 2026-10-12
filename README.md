@@ -124,6 +124,19 @@ make -C test
 `main/spectrum.h` on the host: dBFS scaling against a direct DFT, the
 band table, the ballistics' independence from framerate.
 
+## Pictures without a board
+
+```
+make -C test/render
+```
+
+Runs `main/analyzer.c`'s own drawing on a PC, against stand-ins for the
+hardware, on ten seconds of a made-up signal, and writes each view as a
+picture of the screen (`bars.ppm`, `oct.ppm`, `fall.ppm`, and the same
+for the built-in microphones). For checking layout before flashing; the
+font comes from `managed_components`, so it needs one `idf.py build`
+first.
+
 ## Licence
 
 MIT. See `LICENSE`.

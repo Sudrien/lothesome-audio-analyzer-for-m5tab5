@@ -455,3 +455,21 @@ test, and 0016 made the tick step a runtime value -- so an `-O2` build
 inlines `draw_static()` into `layout_for()` and fails on
 `-Werror=format-truncation`. The host test never builds analyzer.c, so
 nothing here caught it. Both buffers are 16 bytes, room for any int.
+
+### 0018 -- test/render, the screen on a PC
+
+`main/analyzer.c` included whole into `test/render/render.c`, against
+`test/render/stub/` for ESP-IDF, FreeRTOS, esp-dsp and the feckless
+libraries: a real 720 x 1280 shadow buffer, a plain radix-2 FFT in
+esp-dsp's place, and no-ops for the rest. The harness does app_main()'s
+setup and drives the frame the way its loop does -- feed(), capture(),
+fft(), render(), waterfall_push() -- at 45 fps on ten seconds of room
+noise, hum, chords, a sweep and a clap, then reads the buffer back
+through `landmap.h` and writes the landscape picture as a PPM. Each view
+at 48 kHz for a USB microphone, 1/3 octave at 44.1 kHz, and each view
+for the built-in microphones.
+
+It is how the screen was first seen before flashing, and it found
+0019's bug the first time it ran. Not in CI: the Ark12 font comes from
+feckless-graphics-handler, which is in `managed_components` only after
+an `idf.py build`; `ARK12=` points it elsewhere.
