@@ -469,6 +469,45 @@ static inline float spectrum_lcpeak(const spectrum_meter_t *m)
     return (float)(20.0 * log10((double)m->peak_c / SPECTRUM_SAMPLE_FULL_SCALE + 1e-9));
 }
 
+/* ---- 0015: the waterfall ----
+ *
+ * Colour for a level, 0..1 of the graph's dB range: black through purple
+ * and orange to pale yellow, after matplotlib's "inferno". Lightness
+ * rises all the way, so the level reads in greyscale and without telling
+ * red from green, which the bars' green-to-red does not.
+ *
+ * src: inferno at ninths of its range, matplotlib _cm_listed.py, rounded.
+ */
+static inline void spectrum_heat_rgb(float frac, int *r, int *g, int *b)
+{
+    static const unsigned char k[9][3] = {
+        {   0,   0,   4 }, {  31,  12,  72 }, {  85,  15, 109 },
+        { 136,  34, 106 }, { 186,  54,  85 }, { 227,  89,  51 },
+        { 249, 140,  10 }, { 249, 201,  50 }, { 252, 255, 164 },
+    };
+    frac = spectrum_clampf(frac, 0.0f, 1.0f) * 8.0f;
+    int i = (int)frac;
+    if (i > 7) i = 7;
+    const float t = frac - (float)i;
+    *r = (int)(k[i][0] + (k[i + 1][0] - k[i][0]) * t + 0.5f);
+    *g = (int)(k[i][1] + (k[i + 1][1] - k[i][1]) * t + 0.5f);
+    *b = (int)(k[i][2] + (k[i + 1][2] - k[i][2]) * t + 0.5f);
+}
+
+/*
+ * How many waterfall rows a frame of `dt` seconds owes at `rows_per_sec`,
+ * carrying the fraction in *acc. The rows are time, so they advance by
+ * the clock and not by the framerate: a slow frame owes several rows, a
+ * fast one sometimes none, and the time labels stay true either way.
+ */
+static inline int spectrum_wf_rows(float *acc, float dt, float rows_per_sec)
+{
+    *acc += dt * rows_per_sec;
+    const int n = (int)*acc;
+    *acc -= (float)n;
+    return n;
+}
+
 #ifdef __cplusplus
 }
 #endif

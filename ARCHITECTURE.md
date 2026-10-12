@@ -387,3 +387,34 @@ re-initialises the meter, since a reading across two gains means
 neither.
 
 The graph's top moves from 70 to 104 to make room for the line.
+
+### 0015 -- the waterfall
+
+A second view: the bars as a 140 px strip, and under them a waterfall
+of the last 10.5 s, newest at the top, one column per bar column so the
+two share the frequency axis. Each column's level is the frame's
+unsmoothed one -- the ballistics are for the bars -- through a 256-entry
+table of `spectrum_heat_rgb()`, an inferno-like map whose lightness
+rises the whole way, so it reads without colour vision.
+
+Rows are time: `spectrum_wf_rows()` owes 40 a second by the clock and
+carries the fraction, so a slow frame paints several identical rows and
+the time labels stay true at any framerate. `test/spectrumtest.c` checks
+both the map and the row count at 7 to 120 fps.
+
+Scrolling is a `memmove` along each panel row: a landscape column is a
+panel row (0006), and the waterfall is a contiguous run of it, so one
+row down is 1090 moves of 844 bytes in the shadow. A ring was weighed
+and dropped. `gfx_blit()` sends whole panel rows and the DPI driver
+takes a source exactly as wide as the rectangle, so a ring would have to
+be unrolled into the shadow in order every frame -- the same bytes. And
+the bars already dirty nearly every column each frame, so the waterfall
+adds no blit, only the move.
+
+The graph ends 90 px from the right in waterfall mode, for a colour key
+labelled every 30 dB; the strip's dB ticks go to 30 dB steps too. The
+two mode buttons take the top right, so the source label stops short of
+them and the fps moves under them. Touch is turned to 270 to match
+`landmap.h`; a press that lands on a button chooses that mode and
+cannot also reset the meter, whose half-second hold still works
+anywhere else.

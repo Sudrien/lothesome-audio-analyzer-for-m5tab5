@@ -390,6 +390,35 @@ static void test_meter(void)
     CHECK(!m.clipped && m.n == 0 && spectrum_laeq(&m) < -170.0f, "reset left readings");
 }
 
+/* 0015: the waterfall's colours get lighter all the way up, from black
+ * to pale yellow, and its rows keep time at any framerate. */
+static void test_waterfall(void)
+{
+    int r, g, b, ok = 1;
+    double prev = -1;
+    for (int i = 0; i <= 256; i++) {
+        spectrum_heat_rgb(i / 256.0f, &r, &g, &b);
+        ok &= r >= 0 && r <= 255 && g >= 0 && g <= 255 && b >= 0 && b <= 255;
+        const double luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+        ok &= luma >= prev;
+        prev = luma;
+    }
+    CHECK(ok, "heat map not rising in lightness");
+    spectrum_heat_rgb(0.0f, &r, &g, &b);
+    CHECK(r + g + b < 10, "floor not black: %d %d %d", r, g, b);
+    spectrum_heat_rgb(2.0f, &r, &g, &b);
+    CHECK(r > 240 && g > 240, "top not pale yellow: %d %d %d", r, g, b);
+
+    const float rates[] = { 7.0f, 23.0f, 45.0f, 120.0f };   /* frames a second */
+    for (int i = 0; i < 4; i++) {
+        float acc = 0.0f;
+        int rows = 0;
+        for (int f = 0; f < (int)(rates[i] * 10.0f); f++)
+            rows += spectrum_wf_rows(&acc, 1.0f / rates[i], 40.0f);
+        CHECK(rows >= 399 && rows <= 400, "%d rows in 10 s at %.0f fps", rows, rates[i]);
+    }
+}
+
 int main(void)
 {
     test_rates();
@@ -402,6 +431,7 @@ int main(void)
     test_bass();
     test_weighting();
     test_meter();
+    test_waterfall();
     test_axes();
     printf("spectrumtest: %d checks, %d failures\n", checks, failures);
     return failures ? 1 : 0;

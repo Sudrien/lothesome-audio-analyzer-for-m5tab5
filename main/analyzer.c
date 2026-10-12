@@ -85,6 +85,29 @@ static const char *TAG = "analyzer";
 #define COL_DEAF            RGB(28, 28, 28)  /* 0013: below the source's floor */
 #define COL_CLIP            RGB(255, 40, 40) /* 0014 */
 
+/*
+ * 0015: the waterfall mode. The bars shrink to a strip and the last ten
+ * seconds scroll down under them, newest at the top, on the same
+ * frequency axis, so a line in one is a line in the other.
+ *
+ * Scrolling is a memmove per column. A landscape column is a panel row
+ * (landmap.h), and the waterfall's rows are a contiguous run of it, so
+ * moving the picture down one row is one short move along each panel
+ * row: 1090 of 844 bytes. A ring in the shadow would save nothing,
+ * because gfx_blit() sends whole panel rows from a buffer laid out as
+ * the screen is: the ring would have to be put back in order every
+ * frame, which is the same copy. And the bars already dirty nearly
+ * every column a frame, so the waterfall adds no blit.
+ */
+#define WF_ROWS_PER_SEC     (40.0f)  /* time down the waterfall */
+#define STRIP_H             (140)    /* the bars, in waterfall mode */
+#define WF_GAP              (8)
+#define KEY_W               (16)     /* the colour key, right of the graph */
+#define MODE_X              (LAND_W - 296)
+#define MODE_Y              (6)
+#define MODE_H              (36)
+#define MODE_W              (143)    /* each of the two buttons */
+
 #define MAX_GRAPH_H         (800)   /* bound for the row tables */
 
 /* ---- capture and FFT buffers: static, never on the task's stack ---- */
@@ -145,6 +168,14 @@ static volatile bool    s_meter_reset_req;
 /* ---- layout ---- */
 static int s_w, s_h;
 static int s_left, s_right, s_top, s_bottom, s_graph_w, s_graph_h;
+static int s_axis_y;                 /* 0015: where the frequency labels hang */
+
+typedef enum { MODE_SPECTRUM, MODE_WATERFALL } view_mode_t;
+static view_mode_t s_mode = MODE_SPECTRUM;      /* 0015 */
+static int    s_wf_top, s_wf_h;
+static float  s_wf_frac[LAND_W];           /* this frame's level per column, unsmoothed */
+static float  s_wf_acc;
+static uint16_t s_heat[256];               /* spectrum_heat_rgb(), as 565 */
 static float s_max_hz = SPECTRUM_LOG_MAX_HZ;    /* 0008: the source's Nyquist */
 static int   s_first_col;    /* 0013: the first column the source can hear */
 
@@ -233,6 +264,76 @@ static void land_blit(int x0, int x1)
  * columns of that bar's rows. MAX_GRAPH_H bounds it. */
 static uint16_t s_line[LAND_H];
 
+/* 0015: the graph's frame for the mode. In waterfall mode the bars are
+ * STRIP_H tall and the graph stops short of the right edge, for the key. */
+static void set_geometry(void)
+{
+    s_left = 100;               /* room for the dB labels */
+    s_top  = 104;               /* clear of the title and, 0014, the meter */
+    s_axis_y = s_h - 46;        /* room for the frequency labels */
+    if (s_mode == MODE_WATERFALL) {
+        s_right  = s_w - 90;
+        s_bottom = s_top + STRIP_H;
+        s_wf_top = s_bottom + WF_GAP;
+        s_wf_h   = s_axis_y - s_wf_top;
+    } else {
+        s_right  = s_w - 10;
+        s_bottom = s_axis_y;
+        s_wf_top = s_wf_h = 0;
+    }
+    s_graph_w = s_right - s_left;
+    s_graph_h = s_bottom - s_top;
+    if (s_graph_h > MAX_GRAPH_H) s_graph_h = MAX_GRAPH_H;
+    s_bottom = s_top + s_graph_h;
+    s_wf_acc = 0.0f;
+}
+
+/* 0015: the two mode buttons, top right; the chosen one lit. */
+static void draw_mode_buttons(void)
+{
+    static const char *const names[2] = { "SPECTRUM", "WATERFALL" };
+    const int label_h = ARK12_H * LABEL_SCALE;
+    land_fill(MODE_X - 1, MODE_Y - 1, 2 * MODE_W + 2, MODE_H + 2, COL_BASE);
+    for (int i = 0; i < 2; i++) {
+        const bool on = (int)s_mode == i;
+        const int x = MODE_X + i * MODE_W;
+        land_fill(x, MODE_Y, MODE_W, MODE_H, on ? COL_LABEL : COL_BLACK);
+        const int tw = land_text_w(names[i], LABEL_SCALE);
+        land_text(x + (MODE_W - tw) / 2, MODE_Y + (MODE_H - label_h) / 2, names[i],
+                  LABEL_SCALE, on ? COL_BLACK : COL_LABEL);
+    }
+}
+
+/* 0015: the waterfall's time labels and its colour key. */
+static void draw_waterfall_static(void)
+{
+    const int label_h = ARK12_H * LABEL_SCALE;
+    for (int sec = 0; ; sec += 2) {
+        const int y = s_wf_top + (int)((float)sec * WF_ROWS_PER_SEC);
+        if (y > s_wf_top + s_wf_h - label_h) break;
+        char buf[8];
+        if (sec == 0) snprintf(buf, sizeof(buf), "now");
+        else          snprintf(buf, sizeof(buf), "-%d s", sec);
+        const int tw = land_text_w(buf, LABEL_SCALE);
+        land_text(s_left - tw - 8, sec == 0 ? y : y - label_h / 2, buf, LABEL_SCALE, COL_LABEL);
+    }
+    const int kx = s_right + 14;
+    for (int y = 0; y < s_wf_h; y++) {
+        const int i = 255 - (y * 255) / (s_wf_h - 1);
+        land_fill(kx, s_wf_top + y, KEY_W, 1, s_heat[i]);
+    }
+    for (int db = 0; db >= (int)SPECTRUM_MIN_DBFS; db -= 30) {
+        const float frac = ((float)db - SPECTRUM_MIN_DBFS) / (SPECTRUM_MAX_DBFS - SPECTRUM_MIN_DBFS);
+        int y = s_wf_top + (int)((1.0f - frac) * (float)(s_wf_h - 1)) - label_h / 2;
+        if (y < s_wf_top) y = s_wf_top;
+        if (y > s_wf_top + s_wf_h - label_h) y = s_wf_top + s_wf_h - label_h;
+        char buf[8];
+        snprintf(buf, sizeof(buf), "%d", db);
+        land_text(kx + KEY_W + 6, y, buf, LABEL_SCALE, COL_LABEL);
+    }
+    hline(s_left, s_wf_top + s_wf_h, s_graph_w, COL_BASE);
+}
+
 static void draw_static(void)
 {
     land_fill(0, 0, s_w, s_h, COL_BLACK);
@@ -245,11 +346,13 @@ static void draw_static(void)
         s_row_grid[h] = false;
     }
 
-    /* dBFS ticks every 10 dB from the floor up to 0, labelled on the left. */
+    /* dBFS ticks every 10 dB from the floor up to 0, labelled on the left.
+     * 0015: every 30 on the waterfall's short strip, where 10 would crowd. */
     const int label_h = ARK12_H * LABEL_SCALE;
-    int first = ((int)SPECTRUM_MIN_DBFS / 10) * 10;
-    if (first < SPECTRUM_MIN_DBFS) first += 10;
-    for (int db = first; db <= (int)SPECTRUM_MAX_DBFS; db += 10) {
+    const int step = s_graph_h < 300 ? 30 : 10;
+    int first = ((int)SPECTRUM_MIN_DBFS / step) * step;
+    if (first < SPECTRUM_MIN_DBFS) first += step;
+    for (int db = first; db <= (int)SPECTRUM_MAX_DBFS; db += step) {
         const float frac = ((float)db - SPECTRUM_MIN_DBFS) /
                            (SPECTRUM_MAX_DBFS - SPECTRUM_MIN_DBFS);
         const int h = (int)(frac * (float)s_graph_h);
@@ -275,10 +378,12 @@ static void draw_static(void)
         int x = spectrum_freq_x_at(f, s_graph_w, s_max_hz);
         if (x > s_graph_w - 60) x = s_graph_w - 60;
         if (x < 0) x = 0;
-        land_text(s_left + x, s_bottom + 10, buf, LABEL_SCALE, COL_LABEL);
+        land_text(s_left + x, s_axis_y + 10, buf, LABEL_SCALE, COL_LABEL);
     }
 
     hline(s_left, s_bottom, s_graph_w, COL_BASE);
+    if (s_mode == MODE_WATERFALL) draw_waterfall_static();
+    draw_mode_buttons();
     gfx_blit(0, gfx_h());
 }
 
@@ -538,7 +643,9 @@ static void render(float dt, int *x0, int *x1)
 
     for (int b = s_first_col; b < s_graph_w; b++) {
         const float mag = spectrum_band_mag(&s_band[b], s_band[b].bass ? s_bass_mag : s_mag);
-        spectrum_ballistics(spectrum_frac(spectrum_dbfs(mag)), dt, &s_level[b], &s_peak[b]);
+        const float target = spectrum_frac(spectrum_dbfs(mag));
+        s_wf_frac[b] = target;              /* 0015: the waterfall takes it raw */
+        spectrum_ballistics(target, dt, &s_level[b], &s_peak[b]);
 
         const int new_h     = (int)(s_level[b] * (float)s_graph_h);
         const int bar_top_y = s_bottom - new_h;
@@ -571,10 +678,32 @@ static void render(float dt, int *x0, int *x1)
     *x1 = dirty_r > dirty_l ? dirty_r : dirty_l;
 }
 
+/* 0015: move the waterfall down `n` rows and paint the newest at the
+ * top, straight in the shadow's panel rows. Returns the dirty columns. */
+static void waterfall_push(int n, int *x0, int *x1)
+{
+    if (n <= 0 || s_mode != MODE_WATERFALL) return;
+    if (n > s_wf_h) n = s_wf_h;
+    uint16_t *fb = gfx_fb();
+    const int stride = gfx_w();
+    for (int b = s_first_col; b < s_graph_w; b++) {
+        const int lx = s_left + b;
+        uint16_t *row = fb + (size_t)landmap_py(lx, 0, LAND_W) * (size_t)stride +
+                        landmap_px(lx, s_wf_top, LAND_W);
+        if (n < s_wf_h) memmove(row + n, row, (size_t)(s_wf_h - n) * sizeof(uint16_t));
+        const uint16_t c = s_heat[(int)(s_wf_frac[b] * 255.0f + 0.5f)];
+        for (int i = 0; i < n; i++) row[i] = c;
+    }
+    const int l = s_left + s_first_col, r = s_left + s_graph_w;
+    if (*x1 <= *x0) { *x0 = l; *x1 = r; return; }
+    if (l < *x0) *x0 = l;
+    if (r > *x1) *x1 = r;
+}
+
 /* 0007: which source the bars are, between the title and the fps. */
 static void draw_source(int src)
 {
-    const int x = 560, y = 14, h = ARK12_H * LABEL_SCALE, x_end = s_w - 180;
+    const int x = 560, y = 14, h = ARK12_H * LABEL_SCALE, x_end = MODE_X - 14;   /* 0015 */
     land_fill(x, y, x_end - x, h, COL_BLACK);
     land_text(x, y, src == SRC_USB ? s_usb_label : k_source_name[src], LABEL_SCALE, COL_LABEL);
     land_blit(x, x_end);
@@ -599,6 +728,7 @@ static const float k_source_floor_hz[SRC_COUNT] = {
  * whose floor greys the left of the graph. */
 static void layout_for(uint32_t rate, int src)
 {
+    set_geometry();                         /* 0015: by the mode */
     s_max_hz = (float)rate / 2.0f;
     s_first_col = spectrum_freq_x_at(k_source_floor_hz[src], s_graph_w, s_max_hz);
     for (int b = 0; b < s_graph_w; b++) {
@@ -610,6 +740,8 @@ static void layout_for(uint32_t rate, int src)
     draw_static();
     if (s_first_col > 0) {
         land_fill(s_left, s_top, s_first_col, s_graph_h, COL_DEAF);
+        if (s_mode == MODE_WATERFALL)       /* 0015 */
+            land_fill(s_left, s_wf_top, s_first_col, s_wf_h, COL_DEAF);
         land_blit(s_left, s_left + s_first_col);
     }
 }
@@ -633,7 +765,7 @@ static void draw_meters(void)
 
 static void draw_fps(float fps)
 {
-    const int x = s_w - 170, y = 14, h = ARK12_H * LABEL_SCALE;
+    const int x = s_w - 170, y = 78, h = ARK12_H * LABEL_SCALE;   /* 0015: under the buttons */
     char buf[16];
     snprintf(buf, sizeof(buf), "%5.1f fps", fps);
     land_fill(x, y, s_w - x, h, COL_BLACK);
@@ -669,6 +801,9 @@ void app_main(void)
      * meter resets on a source change only. */
     if (touch_init(tab5io_bus(), LCD_H_RES, LCD_V_RES) != ESP_OK)
         ESP_LOGW(TAG, "no touch; the meter resets only when the source changes");
+    /* 0015: points in the landscape this file draws in. gfx stays at
+     * GFX_ROT_0 and landmap.h is its 270, so touch is told 270. */
+    touch_set_rotation(GFX_ROT_270);
 
     /* Capture borrows playback's clocks (audio_out.h), so playback comes
      * up too, at the capture rate, and plays nothing. */
@@ -701,14 +836,12 @@ void app_main(void)
 
     s_w = LAND_W;
     s_h = LAND_H;
-    s_left   = 100;             /* room for the dB labels */
-    s_right  = s_w - 10;
-    s_top    = 104;             /* clear of the title and, 0014, the meter */
-    s_bottom = s_h - 46;        /* room for the frequency labels */
-    s_graph_w = s_right - s_left;
-    s_graph_h = s_bottom - s_top;
-    if (s_graph_h > MAX_GRAPH_H) s_graph_h = MAX_GRAPH_H;
-    s_bottom = s_top + s_graph_h;
+    for (int i = 0; i < 256; i++) {         /* 0015 */
+        int r, g, b;
+        spectrum_heat_rgb((float)i / 255.0f, &r, &g, &b);
+        s_heat[i] = RGB(r, g, b);
+    }
+    set_geometry();                         /* 0015: was the layout here */
 
     layout_for(SPECTRUM_SAMPLE_RATE, SRC_BUILTIN);     /* 0008, 0013 */
     ESP_ERROR_CHECK(lcd_backlight_set(ANALYZER_BACKLIGHT));
@@ -723,6 +856,7 @@ void app_main(void)
     int64_t t_capture = 0, t_fft = 0, t_draw = 0;
     int64_t meter_us = 0, touch_us = 0, press_us = -1;     /* 0014 */
     bool reset_done = false;
+    bool press_on_mode = false;             /* 0015: a press that chose a mode resets nothing */
 
     for (;;) {
         const int64_t t0 = esp_timer_get_time();
@@ -741,6 +875,7 @@ void app_main(void)
 
         int x0, x1;
         render(dt, &x0, &x1);
+        waterfall_push(spectrum_wf_rows(&s_wf_acc, dt, WF_ROWS_PER_SEC), &x0, &x1);  /* 0015 */
         if (x1 > x0) land_blit(x0, x1);
         if (s_source != shown_source) {
             shown_source = s_source;
@@ -779,9 +914,23 @@ void app_main(void)
             if (!touch_get(&tx, &ty)) {
                 press_us = -1;
                 reset_done = false;
+                press_on_mode = false;
             } else if (press_us < 0) {
                 press_us = t3;
-            } else if (!reset_done && t3 - press_us >= RESET_HOLD_US) {
+                /* 0015: a press on a mode button picks that mode. */
+                if (ty >= MODE_Y && ty < MODE_Y + MODE_H &&
+                    tx >= MODE_X && tx < MODE_X + 2 * MODE_W) {
+                    press_on_mode = true;
+                    const view_mode_t want = tx < MODE_X + MODE_W ? MODE_SPECTRUM : MODE_WATERFALL;
+                    if (want != s_mode && shown_source >= 0) {
+                        s_mode = want;
+                        layout_for(shown_rate, shown_source);
+                        draw_source(shown_source);
+                        meter_us = 0;       /* the repaint wiped the meter line */
+                        ESP_LOGI(TAG, "mode: %s", want == MODE_WATERFALL ? "waterfall" : "spectrum");
+                    }
+                }
+            } else if (!press_on_mode && !reset_done && t3 - press_us >= RESET_HOLD_US) {
                 s_meter_reset_req = true;
                 reset_done = true;
                 ESP_LOGI(TAG, "meter reset");

@@ -65,6 +65,15 @@ low-passed and decimated to 3 kHz: 2.9 Hz bins instead of 46.9, over a
 part of the axis a source cannot hear is greyed: below 80 Hz for the
 built-in microphones and the jack, nothing for a USB microphone.
 
+## The waterfall
+
+**WATERFALL**, top right, shrinks the bars to a strip and scrolls the
+last ten seconds down under them, newest at the top, on the same
+frequency axis: 40 rows a second, coloured black through purple and
+orange to pale yellow by level. **SPECTRUM** puts the full-height bars
+back. Left of 1.2 kHz the picture comes from the bass FFT and is
+smeared over a third of a second, which is the price of its resolution.
+
 ## The meter
 
 Under the title, on every sample rather than the FFT: **LAeq** (A
