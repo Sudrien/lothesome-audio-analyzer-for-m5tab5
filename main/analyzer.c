@@ -340,7 +340,7 @@ static void draw_waterfall_static(void)
     for (int sec = 0; ; sec += 2) {
         const int y = s_wf_top + (int)((float)sec * WF_ROWS_PER_SEC);
         if (y > s_wf_top + s_wf_h - label_h) break;
-        char buf[8];
+        char buf[16];    /* 0017: room for any int, as -Wformat-truncation wants */
         if (sec == 0) snprintf(buf, sizeof(buf), "now");
         else          snprintf(buf, sizeof(buf), "-%d s", sec);
         const int tw = land_text_w(buf, LABEL_SCALE);
@@ -390,7 +390,7 @@ static void draw_static(void)
         const int y = s_bottom - h;
         hline(s_left, y, s_graph_w, COL_GRID);
 
-        char buf[8];
+        char buf[16];    /* 0017: the step is no longer a constant (0016) */
         snprintf(buf, sizeof(buf), "%d", db);
         const int tw = land_text_w(buf, LABEL_SCALE);
         land_text(s_left - tw - 8, y - label_h / 2, buf, LABEL_SCALE, COL_LABEL);

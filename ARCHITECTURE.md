@@ -446,3 +446,12 @@ whose centre is under the source's floor is greyed like the columns.
 
 `render()`'s bar painting moved into `paint_bar()`, shared by the
 columns and the bands, and `repaint_rows()` takes the grey.
+
+### 0017 -- label buffers GCC can bound
+
+0015's time labels and 0016's dB ticks wrote `%d` into 8-byte buffers.
+Neither loop has a bound GCC can see -- the time loop ends on a pixel
+test, and 0016 made the tick step a runtime value -- so an `-O2` build
+inlines `draw_static()` into `layout_for()` and fails on
+`-Werror=format-truncation`. The host test never builds analyzer.c, so
+nothing here caught it. Both buffers are 16 bytes, room for any int.
