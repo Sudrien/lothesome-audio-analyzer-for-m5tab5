@@ -310,6 +310,86 @@ static void test_bass(void)
     CHECK(!hi.bass, "Nyquist is on the bass FFT");
 }
 
+/* 0014: the weighting curves against the analog ones, held to IEC
+ * 61672-1:2013's class 1 limits, at the two rates the sources use. */
+static void test_weighting(void)
+{
+    static const struct { double hz, up, down; } k[] = {
+        { 10, 3.0, 99 }, { 20, 2.0, 2.0 }, { 31.5, 1.5, 1.5 }, { 63, 1.0, 1.0 },
+        { 125, 1.0, 1.0 }, { 250, 1.0, 1.0 }, { 500, 1.0, 1.0 }, { 1000, 0.7, 0.7 },
+        { 2000, 1.0, 1.0 }, { 4000, 1.0, 1.0 }, { 6300, 1.5, 2.0 }, { 8000, 1.5, 2.5 },
+        { 10000, 2.0, 3.0 }, { 12500, 2.0, 5.0 }, { 16000, 2.5, 16.0 },
+    };
+    const double rates[] = { 44100.0, 48000.0 };
+    for (int r = 0; r < 2; r++) {
+        spectrum_biquad_t c[2], a[3];
+        spectrum_weighting(c, a, rates[r]);
+        for (size_t i = 0; i < sizeof(k) / sizeof(k[0]); i++) {
+            const double ea = 20 * log10(spectrum_biquads_mag(a, 3, k[i].hz, rates[r])) - spectrum_a_db(k[i].hz);
+            const double ec = 20 * log10(spectrum_biquads_mag(c, 2, k[i].hz, rates[r])) - spectrum_c_db(k[i].hz);
+            CHECK(ea <= k[i].up && ea >= -k[i].down, "A off by %+.2f dB at %.0f Hz, %.0f", ea, k[i].hz, rates[r]);
+            CHECK(ec <= k[i].up && ec >= -k[i].down, "C off by %+.2f dB at %.0f Hz, %.0f", ec, k[i].hz, rates[r]);
+            if (k[i].hz <= 1000)
+                CHECK(fabs(ea) < 0.1 && fabs(ec) < 0.1, "%.0f Hz off by %+.2f / %+.2f", k[i].hz, ea, ec);
+        }
+    }
+    CHECK(fabs(spectrum_a_db(1000)) < 0.01 && fabs(spectrum_c_db(1000)) < 0.01, "analog not 0 at 1 kHz");
+    CHECK(fabs(spectrum_a_db(100) + 19.1) < 0.05, "analog A at 100 Hz %.2f", spectrum_a_db(100));
+}
+
+/* 0014: the meter on sines, through the float filters, in chunks. */
+static void meter_sine(spectrum_meter_t *m, double hz, double dbfs, double secs)
+{
+    static float x[120];
+    const double amp = SPECTRUM_SAMPLE_FULL_SCALE * pow(10.0, dbfs / 20.0);
+    static long t;
+    for (long done = 0; done < (long)(secs * 48000.0); done += 120) {
+        for (int i = 0; i < 120; i++, t++) x[i] = (float)(amp * sin(2.0 * M_PI * hz * t / 48000.0));
+        spectrum_meter_push(m, x, 120);
+    }
+}
+
+static void test_meter(void)
+{
+    static spectrum_meter_t m;
+    spectrum_meter_init(&m, 48000.0);
+    meter_sine(&m, 1000.0, -20.0, 0.5);
+    spectrum_meter_reset(&m);                     /* past the filters' start */
+    meter_sine(&m, 1000.0, -20.0, 2.0);
+    CHECK(fabsf(spectrum_laeq(&m) + 20.0f) < 0.05f, "1 kHz LAeq %.3f", spectrum_laeq(&m));
+    CHECK(fabsf(spectrum_lafmax(&m) + 20.0f) < 0.1f, "1 kHz LAFmax %.3f", spectrum_lafmax(&m));
+    CHECK(fabsf(spectrum_lcpeak(&m) + 20.0f) < 0.05f, "1 kHz LCpeak %.3f", spectrum_lcpeak(&m));
+    CHECK(!m.clipped, "clipped at -20");
+
+    spectrum_meter_init(&m, 48000.0);
+    meter_sine(&m, 100.0, -20.0, 0.5);
+    spectrum_meter_reset(&m);
+    meter_sine(&m, 100.0, -20.0, 2.0);
+    CHECK(fabsf(spectrum_laeq(&m) - (float)(-20.0 + spectrum_a_db(100))) < 0.1f,
+          "100 Hz LAeq %.3f", spectrum_laeq(&m));
+
+    /* Fast falls 34.7 dB a second (IEC 61672-1: 8.69 / 0.125 s). */
+    const float before = spectrum_laf(&m);
+    meter_sine(&m, 100.0, -200.0, 1.0);
+    CHECK(fabsf(before - spectrum_laf(&m) - 34.7f) < 0.5f, "Fast fell %.2f dB in 1 s",
+          before - spectrum_laf(&m));
+    CHECK(spectrum_lafmax(&m) >= before - 0.01f, "LAFmax did not hold");
+
+    /* Leq is energy over time: a second at -20 and a second of silence
+     * is 3 dB under -20. */
+    spectrum_meter_init(&m, 48000.0);
+    meter_sine(&m, 1000.0, -20.0, 0.5);
+    spectrum_meter_reset(&m);
+    meter_sine(&m, 1000.0, -20.0, 1.0);
+    meter_sine(&m, 1000.0, -300.0, 1.0);
+    CHECK(fabsf(spectrum_laeq(&m) + 23.01f) < 0.1f, "half-silent LAeq %.3f", spectrum_laeq(&m));
+
+    meter_sine(&m, 1000.0, 0.0, 0.1);
+    CHECK(m.clipped, "a full-scale sine did not flag");
+    spectrum_meter_reset(&m);
+    CHECK(!m.clipped && m.n == 0 && spectrum_laeq(&m) < -170.0f, "reset left readings");
+}
+
 int main(void)
 {
     test_rates();
@@ -320,6 +400,8 @@ int main(void)
     test_ballistics();
     test_columns();
     test_bass();
+    test_weighting();
+    test_meter();
     test_axes();
     printf("spectrumtest: %d checks, %d failures\n", checks, failures);
     return failures ? 1 : 0;

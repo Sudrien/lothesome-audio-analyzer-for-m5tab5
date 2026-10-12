@@ -65,6 +65,21 @@ low-passed and decimated to 3 kHz: 2.9 Hz bins instead of 46.9, over a
 part of the axis a source cannot hear is greyed: below 80 Hz for the
 built-in microphones and the jack, nothing for a USB microphone.
 
+## The meter
+
+Under the title, on every sample rather than the FFT: **LAeq** (A
+weighted, the energy average since the last reset), **LAFmax** (the
+highest A-weighted Fast reading, 125 ms) and **LCpeak** (the highest C
+weighted sample), with the time since the reset. **Hold a finger on the
+screen for half a second to reset**; a tap does not, so a stray touch
+cannot wipe a long measurement. Changing source resets it too. **CLIP**
+means a sample reached full scale, so the readings are low.
+
+The levels are dB re a full-scale sine, which reads 0 on all three --
+not dB SPL (below). The weighting is within IEC 61672-1 class 1 limits
+at 44.1 and 48 kHz, but runs up to 0.85 dB high around 8 kHz and 3 dB
+low at 16 kHz; below 32 kHz the top of it is approximate.
+
 ## The scale
 
 0 dBFS is digital full scale. It needs no calibration and is not dB SPL:

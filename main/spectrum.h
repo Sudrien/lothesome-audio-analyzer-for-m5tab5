@@ -296,6 +296,179 @@ static inline void spectrum_row_rg(float frac, int *r, int *g)
     else             { *r = 255; *g = (int)(255.0f * (1.0f - (frac - 0.5f) / 0.5f)); }
 }
 
+/* ---- 0014: the sound level meter ----
+ *
+ * LAeq, LAFmax and LCpeak, on the sample stream rather than the FFT:
+ * peak needs every sample, and Fast and Leq are defined on the weighted
+ * signal itself (IEC 61672-1). Levels are dB re a full-scale sine
+ * (AES17), so a full-scale sine reads 0 on all three, as it does on the
+ * bars. They are NOT dB SPL; see SPECTRUM_MIN_DBFS's comment.
+ *
+ * A and C weighting from their analog poles (IEC 61672-1 Annex E):
+ *   C(s) = k s^2 / ((s+w1)^2 (s+w4)^2)
+ *   A(s) = k s^4 / ((s+w1)^2 (s+w2)(s+w3)(s+w4)^2)
+ * as biquads by the bilinear transform, each pole prewarped so it lands
+ * at its own frequency, and the cascade set to 0 dB at 1 kHz. The
+ * transform still bends the response near Nyquist; test/spectrumtest.c
+ * holds it to class 1 at 44.1 and 48 kHz. A USB source below 32 kHz has
+ * w4 past its Nyquist and gets an approximate C and A at the top.
+ */
+#define SPECTRUM_W_F1          (20.598997)
+#define SPECTRUM_W_F2          (107.65265)
+#define SPECTRUM_W_F3          (737.86223)
+#define SPECTRUM_W_F4          (12194.217)
+#define SPECTRUM_FAST_TAU      (0.125)          /* s, IEC 61672 F */
+#define SPECTRUM_CLIP_FRAC     (0.999f)         /* of full scale: a sample there clipped */
+
+typedef struct {
+    float b0, b1, b2, a1, a2;
+    float z1, z2;                               /* transposed direct form II */
+} spectrum_biquad_t;
+
+static inline float spectrum_biquad(spectrum_biquad_t *q, float x)
+{
+    const float y = q->b0 * x + q->z1;
+    q->z1 = q->b1 * x - q->a1 * y + q->z2;
+    q->z2 = q->b2 * x - q->a2 * y;
+    return y;
+}
+
+/* An analog pole's rad/s, prewarped for the bilinear transform. */
+static inline double spectrum_prewarp(double hz, double rate)
+{
+    const double pi = 3.14159265358979323846;
+    if (hz >= 0.45 * rate) return 2.0 * pi * hz;     /* past Nyquist: as it is */
+    return 2.0 * rate * tan(pi * hz / rate);
+}
+
+/* (B2 s^2 + B1 s + B0) / (A2 s^2 + A1 s + A0) to a digital biquad. */
+static inline spectrum_biquad_t spectrum_bilinear(double B2, double B1, double B0,
+                                                  double A2, double A1, double A0, double rate)
+{
+    const double k = 2.0 * rate, k2 = k * k;
+    const double a0 = A2 * k2 + A1 * k + A0;
+    spectrum_biquad_t q = { 0 };
+    q.b0 = (float)((B2 * k2 + B1 * k + B0) / a0);
+    q.b1 = (float)((2.0 * B0 - 2.0 * B2 * k2) / a0);
+    q.b2 = (float)((B2 * k2 - B1 * k + B0) / a0);
+    q.a1 = (float)((2.0 * A0 - 2.0 * A2 * k2) / a0);
+    q.a2 = (float)((A2 * k2 - A1 * k + A0) / a0);
+    return q;
+}
+
+/* |H| of n biquads at hz. */
+static inline double spectrum_biquads_mag(const spectrum_biquad_t *q, int n, double hz, double rate)
+{
+    const double w = 2.0 * 3.14159265358979323846 * hz / rate;
+    double g = 1.0;
+    for (int i = 0; i < n; i++) {
+        const double cr = cos(w), ci = -sin(w), c2r = cos(2 * w), c2i = -sin(2 * w);
+        const double nr = q[i].b0 + q[i].b1 * cr + q[i].b2 * c2r, ni = q[i].b1 * ci + q[i].b2 * c2i;
+        const double dr = 1.0 + q[i].a1 * cr + q[i].a2 * c2r,     di = q[i].a1 * ci + q[i].a2 * c2i;
+        g *= sqrt((nr * nr + ni * ni) / (dr * dr + di * di));
+    }
+    return g;
+}
+
+/* C weighting into c[2], A into a[3], for `rate`. */
+static inline void spectrum_weighting(spectrum_biquad_t c[2], spectrum_biquad_t a[3], double rate)
+{
+    const double w1 = spectrum_prewarp(SPECTRUM_W_F1, rate), w2 = spectrum_prewarp(SPECTRUM_W_F2, rate);
+    const double w3 = spectrum_prewarp(SPECTRUM_W_F3, rate), w4 = spectrum_prewarp(SPECTRUM_W_F4, rate);
+    const spectrum_biquad_t hp1 = spectrum_bilinear(1, 0, 0, 1, 2 * w1, w1 * w1, rate);   /* s^2/(s+w1)^2 */
+    const spectrum_biquad_t lp4 = spectrum_bilinear(0, 0, 1, 1, 2 * w4, w4 * w4, rate);   /* 1/(s+w4)^2 */
+    const spectrum_biquad_t hp23 = spectrum_bilinear(1, 0, 0, 1, w2 + w3, w2 * w3, rate); /* s^2/((s+w2)(s+w3)) */
+    c[0] = hp1; c[1] = lp4;
+    a[0] = hp1; a[1] = lp4; a[2] = hp23;
+    const float gc = (float)(1.0 / spectrum_biquads_mag(c, 2, 1000.0, rate));
+    const float ga = (float)(1.0 / spectrum_biquads_mag(a, 3, 1000.0, rate));
+    c[0].b0 *= gc; c[0].b1 *= gc; c[0].b2 *= gc;
+    a[0].b0 *= ga; a[0].b1 *= ga; a[0].b2 *= ga;
+}
+
+/* The analog curves, in dB, for checking the digital ones. */
+static inline double spectrum_a_db(double f)
+{
+    const double f2 = f * f, p1 = SPECTRUM_W_F1 * SPECTRUM_W_F1, p4 = SPECTRUM_W_F4 * SPECTRUM_W_F4;
+    const double r = p4 * f2 * f2 / ((f2 + p1) * sqrt((f2 + SPECTRUM_W_F2 * SPECTRUM_W_F2) *
+                                                      (f2 + SPECTRUM_W_F3 * SPECTRUM_W_F3)) * (f2 + p4));
+    return 20.0 * log10(r) + 2.0;
+}
+
+static inline double spectrum_c_db(double f)
+{
+    const double f2 = f * f, p1 = SPECTRUM_W_F1 * SPECTRUM_W_F1, p4 = SPECTRUM_W_F4 * SPECTRUM_W_F4;
+    return 20.0 * log10(p4 * f2 / ((f2 + p1) * (f2 + p4))) + 0.06;
+}
+
+typedef struct {
+    spectrum_biquad_t c[2], a[3];
+    float    fast_k;        /* per-sample step of the Fast average */
+    float    fast_e;        /* A-weighted mean square, Fast */
+    float    max_e;         /* the largest fast_e */
+    float    peak_c;        /* the largest |C-weighted sample| */
+    double   sum_a2;        /* sum of A-weighted squares, for Leq */
+    uint64_t n;
+    bool     clipped;
+    double   rate;
+} spectrum_meter_t;
+
+/* Start over: the readings, not the filters, which carry on. */
+static inline void spectrum_meter_reset(spectrum_meter_t *m)
+{
+    m->max_e = m->peak_c = 0.0f;
+    m->fast_e = 0.0f;
+    m->sum_a2 = 0.0;
+    m->n = 0;
+    m->clipped = false;
+}
+
+/* For a source at `rate`: filters and readings both from nothing. */
+static inline void spectrum_meter_init(spectrum_meter_t *m, double rate)
+{
+    *m = (spectrum_meter_t){ 0 };
+    m->rate = rate;
+    spectrum_weighting(m->c, m->a, rate);
+    m->fast_k = (float)(1.0 - exp(-1.0 / (SPECTRUM_FAST_TAU * rate)));
+}
+
+static inline void spectrum_meter_push(spectrum_meter_t *m, const float *x, int n)
+{
+    for (int i = 0; i < n; i++) {
+        float ya = x[i], yc = x[i];
+        for (int k = 0; k < 3; k++) ya = spectrum_biquad(&m->a[k], ya);
+        for (int k = 0; k < 2; k++) yc = spectrum_biquad(&m->c[k], yc);
+        const float e = ya * ya;
+        m->sum_a2 += e;
+        m->fast_e += (e - m->fast_e) * m->fast_k;
+        if (m->fast_e > m->max_e) m->max_e = m->fast_e;
+        if (fabsf(yc) > m->peak_c) m->peak_c = fabsf(yc);
+        if (fabsf(x[i]) >= SPECTRUM_CLIP_FRAC * SPECTRUM_SAMPLE_FULL_SCALE) m->clipped = true;
+    }
+    m->n += (uint64_t)n;
+}
+
+/* Mean square to dB re a full-scale sine, whose mean square is FS^2/2. */
+static inline float spectrum_ms_db(double ms)
+{
+    const double ref = (double)SPECTRUM_SAMPLE_FULL_SCALE * SPECTRUM_SAMPLE_FULL_SCALE / 2.0;
+    return (float)(10.0 * log10(ms / ref + 1e-18));
+}
+
+static inline float spectrum_laeq(const spectrum_meter_t *m)
+{
+    return m->n ? spectrum_ms_db(m->sum_a2 / (double)m->n) : -180.0f;
+}
+
+static inline float spectrum_laf(const spectrum_meter_t *m)    { return spectrum_ms_db(m->fast_e); }
+static inline float spectrum_lafmax(const spectrum_meter_t *m) { return spectrum_ms_db(m->max_e); }
+
+/* A sine's peak is FS at full scale, so peak is 20 log10 of |x| / FS. */
+static inline float spectrum_lcpeak(const spectrum_meter_t *m)
+{
+    return (float)(20.0 * log10((double)m->peak_c / SPECTRUM_SAMPLE_FULL_SCALE + 1e-9));
+}
+
 #ifdef __cplusplus
 }
 #endif

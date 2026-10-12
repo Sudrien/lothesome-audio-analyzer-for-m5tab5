@@ -355,3 +355,35 @@ and the jack, 20 Hz for USB. Below it the graph is filled grey and its
 columns are not drawn, so a deaf region does not read as silence. A
 source change now always rebuilds the layout, since the floor can move
 without the rate.
+
+### 0014 -- LAeq, LAFmax, LCpeak
+
+A sound level meter in `spectrum.h`, fed by the capture task with every
+mono chunk, beside the decimator: on the samples, because LCpeak needs
+every one and Fast and Leq are defined on the weighted signal (IEC
+61672-1), and an FFT window neither sees every sample nor weights them
+evenly.
+
+A and C weighting are biquads from the standard's analog poles by the
+bilinear transform, each pole prewarped, the cascade set to 0 dB at
+1 kHz: C is two, A three. `test/spectrumtest.c` holds both to class 1 at
+44.1 and 48 kHz and to 0.1 dB up to 1 kHz, and runs sines through the
+float filters for LAeq, LAFmax, LCpeak, Fast's 34.7 dB/s fall and Leq's
+energy average. The transform's bend near Nyquist is the weak point:
++0.85 dB at 8 kHz and -3 dB at 16 kHz at 48 kHz, within class 1 but not
+much inside it. A higher-order fit would do better.
+
+Levels are dB re a full-scale sine (AES17), so a full-scale sine reads 0
+on all three and agrees with the bars; LAeq sums in double, which stays
+exact for days. A sample at 0.999 of full scale sets CLIP.
+
+The capture task is the meter's only writer: it publishes the readings
+after each chunk and does a reset the drawing loop asks for. The drawing
+loop redraws the line four times a second, and reads touch (feckless-
+drivers' `touch.h`, already in v0.3.0) at 20 Hz. A reset is a press held
+half a second, not a tap: the player found this panel reporting presses
+nobody made (feckless-drivers' `touch.c`, 0503). A source change
+re-initialises the meter, since a reading across two gains means
+neither.
+
+The graph's top moves from 70 to 104 to make room for the line.

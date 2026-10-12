@@ -42,6 +42,7 @@
 #include "gfx.h"
 #include "lcd.h"
 #include "tab5io.h"
+#include "touch.h"        /* 0014 */
 #include "uac.h"          /* 0008 */
 #include "usbhost.h"      /* 0008 */
 #include "ark12.h"        /* 0006: glyphs, drawn turned */
@@ -82,6 +83,7 @@ static const char *TAG = "analyzer";
 #define COL_BASE            ((uint16_t)0x7BEF)
 #define COL_LABEL           ((uint16_t)0xD69A)
 #define COL_DEAF            RGB(28, 28, 28)  /* 0013: below the source's floor */
+#define COL_CLIP            RGB(255, 40, 40) /* 0014 */
 
 #define MAX_GRAPH_H         (800)   /* bound for the row tables */
 
@@ -119,6 +121,26 @@ static monoring_t       s_bass_ring;
 static float            s_bass_fft[SPECTRUM_FFT_SIZE * 2] __attribute__((aligned(16)));
 static float            s_bass_mag[SPECTRUM_FFT_SIZE / 2];
 static bool             s_bass_ready;    /* a whole bass window has arrived */
+
+/*
+ * 0014: the sound level meter (spectrum.h), run by the capture task on
+ * every sample. It publishes its readings after each chunk; each is one
+ * aligned 32-bit store, and a reader that mixes two chunks' worth sees
+ * readings 2.5 ms apart, which no display can show. The drawing loop
+ * asks for a reset through s_meter_reset_req and the capture task, the
+ * meter's only writer, does it.
+ */
+static spectrum_meter_t s_meter;
+static volatile float   s_pub_laeq = -180.0f, s_pub_lafmax = -180.0f, s_pub_lcpeak = -180.0f;
+static volatile float   s_pub_secs;
+static volatile bool    s_pub_clip;
+static volatile bool    s_meter_reset_req;
+
+#define METER_DRAW_US       (250000)    /* the readout's refresh */
+#define RESET_HOLD_US       (500000)    /* a press this long resets: not a tap,
+                                         * which a stray contact can make
+                                         * (feckless-drivers' touch.c, 0503) */
+#define TOUCH_POLL_US       (50000)
 
 /* ---- layout ---- */
 static int s_w, s_h;
@@ -353,6 +375,17 @@ static void feed(const float *mono, size_t n)
     monoring_write(&s_ring, mono, n);
     const int m = spectrum_decim(&s_decim, s_bass_taps, mono, (int)n, s_bass_chunk);
     if (m) monoring_write(&s_bass_ring, s_bass_chunk, (size_t)m);
+
+    if (s_meter_reset_req) {                    /* 0014 */
+        spectrum_meter_reset(&s_meter);
+        s_meter_reset_req = false;
+    }
+    spectrum_meter_push(&s_meter, mono, (int)n);
+    s_pub_laeq   = spectrum_laeq(&s_meter);
+    s_pub_lafmax = spectrum_lafmax(&s_meter);
+    s_pub_lcpeak = spectrum_lcpeak(&s_meter);
+    s_pub_secs   = (float)((double)s_meter.n / s_meter.rate);
+    s_pub_clip   = s_meter.clipped;
 }
 
 /* 0003: reads the microphones for as long as the program runs. */
@@ -407,6 +440,9 @@ static void capture_task(void *arg)
 
             if (next != cur) {
                 cur = next;
+                /* 0014: a new source is a new gain and maybe a new
+                 * rate; a reading that spanned two would mean neither. */
+                spectrum_meter_init(&s_meter, (double)s_rate);
                 s_source = cur;
             }
         }
@@ -578,6 +614,23 @@ static void layout_for(uint32_t rate, int src)
     }
 }
 
+/* 0014: the meter's line, under the title. dB re a full-scale sine,
+ * which is not dB SPL, and the label says which. */
+static void draw_meters(void)
+{
+    const int x = 10, y = 48, h = ARK12_H * LABEL_SCALE;
+    const float secs = s_pub_secs;
+    const unsigned t = (unsigned)secs;
+    char buf[96];
+    snprintf(buf, sizeof(buf), "LAeq %6.1f   LAFmax %6.1f   LCpeak %6.1f   dB re FS sine   %u:%02u:%02u",
+             (double)s_pub_laeq, (double)s_pub_lafmax, (double)s_pub_lcpeak,
+             t / 3600, t / 60 % 60, t % 60);
+    land_fill(x, y, s_w - x, h, COL_BLACK);
+    land_text(x, y, buf, LABEL_SCALE, COL_LABEL);
+    if (s_pub_clip) land_text(s_w - 90, y, "CLIP", LABEL_SCALE, COL_CLIP);
+    land_blit(x, s_w);
+}
+
 static void draw_fps(float fps)
 {
     const int x = s_w - 170, y = 14, h = ARK12_H * LABEL_SCALE;
@@ -612,6 +665,11 @@ void app_main(void)
     ESP_ERROR_CHECK(lcd_init(&panel));
     ESP_ERROR_CHECK(gfx_init(panel, LCD_H_RES, LCD_V_RES));     /* GFX_ROT_0: see LAND_W */
 
+    /* 0014: touch, for resetting the meter. Not fatal: without it the
+     * meter resets on a source change only. */
+    if (touch_init(tab5io_bus(), LCD_H_RES, LCD_V_RES) != ESP_OK)
+        ESP_LOGW(TAG, "no touch; the meter resets only when the source changes");
+
     /* Capture borrows playback's clocks (audio_out.h), so playback comes
      * up too, at the capture rate, and plays nothing. */
     ESP_ERROR_CHECK(audio_out_init(tab5io_bus(), tab5io_exp1(), SPECTRUM_SAMPLE_RATE));
@@ -630,6 +688,7 @@ void app_main(void)
     }
 
     spectrum_bass_filter(s_bass_taps);      /* 0013: before capture's first chunk */
+    spectrum_meter_init(&s_meter, SPECTRUM_SAMPLE_RATE);   /* 0014: likewise */
     if (xTaskCreatePinnedToCore(capture_task, "capture", CAPTURE_STACK, NULL,
                                 CAPTURE_PRIO, NULL, CAPTURE_CORE) != pdPASS) {
         ESP_LOGE(TAG, "no capture task");
@@ -644,7 +703,7 @@ void app_main(void)
     s_h = LAND_H;
     s_left   = 100;             /* room for the dB labels */
     s_right  = s_w - 10;
-    s_top    = 70;              /* clear of the title */
+    s_top    = 104;             /* clear of the title and, 0014, the meter */
     s_bottom = s_h - 46;        /* room for the frequency labels */
     s_graph_w = s_right - s_left;
     s_graph_h = s_bottom - s_top;
@@ -662,6 +721,8 @@ void app_main(void)
     uint32_t shown_rate = SPECTRUM_SAMPLE_RATE;    /* 0008 */
     uint32_t frames = 0;
     int64_t t_capture = 0, t_fft = 0, t_draw = 0;
+    int64_t meter_us = 0, touch_us = 0, press_us = -1;     /* 0014 */
+    bool reset_done = false;
 
     for (;;) {
         const int64_t t0 = esp_timer_get_time();
@@ -705,6 +766,26 @@ void app_main(void)
             frames = 0;
             report_us = t3;
             t_capture = t_fft = t_draw = 0;
+        }
+
+        /* 0014: the meter's line, and a held press to reset it. */
+        if (t3 - meter_us >= METER_DRAW_US) {
+            meter_us = t3;
+            draw_meters();
+        }
+        if (touch_present() && t3 - touch_us >= TOUCH_POLL_US) {
+            touch_us = t3;
+            int tx, ty;
+            if (!touch_get(&tx, &ty)) {
+                press_us = -1;
+                reset_done = false;
+            } else if (press_us < 0) {
+                press_us = t3;
+            } else if (!reset_done && t3 - press_us >= RESET_HOLD_US) {
+                s_meter_reset_req = true;
+                reset_done = true;
+                ESP_LOGI(TAG, "meter reset");
+            }
         }
 
         if (FRAME_LIMIT_HZ > 0) {
