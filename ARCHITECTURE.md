@@ -493,3 +493,23 @@ band gets its own, in its slot; in the bars and the waterfall's strip,
 where the columns are a pixel wide, one box spans the deaf columns. The
 waterfall under the strip keeps the dark fill, having no level axis for
 a box to stand on. Seen in test/render's `*-builtin.ppm`.
+
+### 0021 -- touch where fingers land, and draw in parts
+
+From the first log off the board. Touch's rotation (0015) was right --
+every press inside a button did what it should -- but most presses
+missed: they landed 1 to 80 px BELOW the button aimed at, and the mode
+buttons are a 36 px strip. The hit zones are now larger than what is
+drawn: the mode buttons take y 0..66 from 10 px left of them to the
+screen's edge, nearest button wins; FAST/SLOW takes y 66..150 and 10 px
+either side. Nothing else on the screen takes a tap. Of that log's 21
+presses, 20 now land on the button they were aimed at; the 21st was
+118 px down, inside the graph.
+
+FAST/SLOW logs its change, which it did not, so a toggle that worked
+looked like one that had not.
+
+FALL drew in 35 ms against BARS' 18. The log's `draw` is now split
+into `bars` (render()), `fall` (waterfall_push()) and `blit`, to say
+whether the difference is the scroll's memmove, the cache writeback of
+what it dirtied (paid inside the blit), or both, before choosing a fix.

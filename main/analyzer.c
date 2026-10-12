@@ -115,6 +115,19 @@ static const char *TAG = "analyzer";
 #define WEIGHT_Y            (74)
 #define WEIGHT_W            (MODE_W)
 #define WEIGHT_H            (26)
+
+/*
+ * 0021: where a press counts, which is more than what is drawn. On the
+ * board fingers landed 1 to 80 px BELOW the buttons they were aimed at,
+ * and a 36 px strip caught few of them. Nothing else on the screen takes
+ * a tap, so the zones reach down into the empty band above the graph
+ * and, for FAST/SLOW, into the top of the graph itself, where a press
+ * otherwise only counts toward the meter's hold-to-reset.
+ */
+#define MODE_HIT_X0         (MODE_X - 10)
+#define MODE_HIT_Y1         (66)     /* MODE_Y + MODE_H is 42 */
+#define WEIGHT_HIT_Y0       (MODE_HIT_Y1)
+#define WEIGHT_HIT_Y1       (150)    /* WEIGHT_Y + WEIGHT_H is 100 */
 #define OCT_GAP             (6)      /* between bands */
 #define COL_PARTIAL         ((uint16_t)0x7BEF)   /* a band cut by Nyquist */
 
@@ -972,6 +985,7 @@ void app_main(void)
     uint32_t shown_rate = SPECTRUM_SAMPLE_RATE;    /* 0008 */
     uint32_t frames = 0;
     int64_t t_capture = 0, t_fft = 0, t_draw = 0;
+    int64_t t_bars = 0, t_fall = 0, t_blit = 0;    /* 0021: draw, in parts */
     int64_t meter_us = 0, touch_us = 0, press_us = -1;     /* 0014 */
     bool reset_done = false;
     bool press_on_mode = false;             /* 0015: a press that chose a mode resets nothing */
@@ -993,8 +1007,14 @@ void app_main(void)
 
         int x0, x1;
         render(dt, &x0, &x1);
+        const int64_t tb = esp_timer_get_time();
         waterfall_push(spectrum_wf_rows(&s_wf_acc, dt, WF_ROWS_PER_SEC), &x0, &x1);  /* 0015 */
+        const int64_t tf = esp_timer_get_time();
         if (x1 > x0) land_blit(x0, x1);
+        const int64_t tl = esp_timer_get_time();
+        t_bars += tb - now;
+        t_fall += tf - tb;
+        t_blit += tl - tf;
         if (s_source != shown_source) {
             shown_source = s_source;
             /* 0008: a USB microphone's rate, published before its source.
@@ -1012,13 +1032,18 @@ void app_main(void)
 
         if (t3 - report_us >= 1000000) {
             const float fps = (float)frames * 1e6f / (float)(t3 - report_us);
-            ESP_LOGI(TAG, "FPS: %.1f | capture %.1fms  fft %.1fms  draw %.1fms",
+            /* 0021: draw in parts -- the bars, the waterfall's scroll and
+             * the blit -- to say which of them FALL's extra 17 ms is. */
+            ESP_LOGI(TAG, "FPS: %.1f | capture %.1fms  fft %.1fms  draw %.1fms "
+                     "(bars %.1f  fall %.1f  blit %.1f)",
                      fps, t_capture / 1000.0f / frames, t_fft / 1000.0f / frames,
-                     t_draw / 1000.0f / frames);
+                     t_draw / 1000.0f / frames, t_bars / 1000.0f / frames,
+                     t_fall / 1000.0f / frames, t_blit / 1000.0f / frames);
             draw_fps(fps);
             frames = 0;
             report_us = t3;
             t_capture = t_fft = t_draw = 0;
+            t_bars = t_fall = t_blit = 0;
         }
 
         /* 0014: the meter's line, and a held press to reset it. */
@@ -1036,10 +1061,12 @@ void app_main(void)
             } else if (press_us < 0) {
                 press_us = t3;
                 /* 0015: a press on a mode button picks that mode. */
-                if (ty >= MODE_Y && ty < MODE_Y + MODE_H &&
-                    tx >= MODE_X && tx < MODE_X + MODE_COUNT * MODE_W) {
+                if (ty >= 0 && ty < MODE_HIT_Y1 && tx >= MODE_HIT_X0 && tx < s_w) {   /* 0021 */
                     press_on_mode = true;
-                    const view_mode_t want = (view_mode_t)((tx - MODE_X) / MODE_W);   /* 0016 */
+                    int i = (tx - MODE_X) / MODE_W;                 /* 0016 */
+                    if (tx < MODE_X) i = 0;
+                    if (i > MODE_COUNT - 1) i = MODE_COUNT - 1;
+                    const view_mode_t want = (view_mode_t)i;
                     if (want != s_mode && shown_source >= 0) {
                         s_mode = want;
                         layout_for(shown_rate, shown_source);
@@ -1048,12 +1075,13 @@ void app_main(void)
                         ESP_LOGI(TAG, "mode: %s", want == MODE_WATERFALL ? "waterfall" :
                                                   want == MODE_OCT ? "1/3 octave" : "bars");
                     }
-                } else if (s_mode == MODE_OCT && ty >= WEIGHT_Y && ty < WEIGHT_Y + WEIGHT_H &&
-                           tx >= WEIGHT_X && tx < WEIGHT_X + WEIGHT_W) {
+                } else if (s_mode == MODE_OCT && ty >= WEIGHT_HIT_Y0 && ty < WEIGHT_HIT_Y1 &&
+                           tx >= WEIGHT_X - 10 && tx < WEIGHT_X + WEIGHT_W + 10) {     /* 0021 */
                     /* 0016: Fast <-> Slow. The averages carry on, so the
                      * bars glide to the new weighting rather than jump. */
                     press_on_mode = true;
                     s_oct_slow = !s_oct_slow;
+                    ESP_LOGI(TAG, "1/3 octave: %s", s_oct_slow ? "slow" : "fast");   /* 0021 */
                     draw_weight_button();
                     land_blit(WEIGHT_X - 1, WEIGHT_X + WEIGHT_W + 1);
                 }
