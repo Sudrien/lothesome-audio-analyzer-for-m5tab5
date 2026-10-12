@@ -22,7 +22,7 @@
 #include <stdlib.h>
 
 int64_t  stub_now_us;
-uint16_t stub_fb[LCD_H_RES * LCD_V_RES];
+uint16_t stub_fb[LCD_H_RES * LCD_V_RES] __attribute__((aligned(128)));
 
 #define FPS         (45)
 #define SECONDS     (10.0)
@@ -109,7 +109,11 @@ static void setup(void)
         s_heat[i] = RGB(r, g, b);
     }
     set_geometry();
+    waterfall_ppa_init();       /* 0022: the software PPA in stub.h */
 }
+
+/* 0022: the ring and PPA must draw exactly what 0015's memmove did. */
+static uint16_t s_saved[LCD_H_RES * LCD_V_RES];
 
 /* Ten seconds of the signal through one view, then its picture. */
 static void run(view_mode_t mode, uint32_t rate, int src, const char *path)
@@ -158,9 +162,26 @@ int main(void)
     run(MODE_OCT,       48000, SRC_USB,     "oct.ppm");
     run(MODE_OCT,       44100, SRC_USB,     "oct-44k.ppm");
     run(MODE_WATERFALL, 48000, SRC_USB,     "fall.ppm");
+    memcpy(s_saved, stub_fb, sizeof(s_saved));
+    ppa_client_handle_t ppa = s_ppa;
+    s_ppa = NULL;                                   /* 0015's memmove */
+    run(MODE_WATERFALL, 48000, SRC_USB,     "fall-memmove.ppm");
+    s_ppa = ppa;
+    size_t diff = 0;
+    for (size_t i = 0; i < sizeof(s_saved) / sizeof(s_saved[0]); i++) diff += s_saved[i] != stub_fb[i];
+    printf("waterfall: ring+PPA vs memmove: %zu pixels differ\n", diff);
+    if (diff) return 1;
     /* the built-in microphones: everything under 80 Hz greyed */
     run(MODE_SPECTRUM,  48000, SRC_BUILTIN, "bars-builtin.ppm");
     run(MODE_OCT,       48000, SRC_BUILTIN, "oct-builtin.ppm");
     run(MODE_WATERFALL, 48000, SRC_BUILTIN, "fall-builtin.ppm");
+    memcpy(s_saved, stub_fb, sizeof(s_saved));
+    s_ppa = NULL;
+    run(MODE_WATERFALL, 48000, SRC_BUILTIN, "fall-builtin-memmove.ppm");
+    s_ppa = ppa;
+    diff = 0;
+    for (size_t i = 0; i < sizeof(s_saved) / sizeof(s_saved[0]); i++) diff += s_saved[i] != stub_fb[i];
+    printf("waterfall, built-in: ring+PPA vs memmove: %zu pixels differ\n", diff);
+    if (diff) return 1;
     return 0;
 }

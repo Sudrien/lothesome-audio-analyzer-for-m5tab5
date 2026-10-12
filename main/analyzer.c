@@ -35,6 +35,9 @@
 #include "esp_dsp.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "esp_heap_caps.h"  /* 0022 */
+#include "esp_cache.h"      /* 0022 */
+#include "driver/ppa.h"     /* 0022 */
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -199,6 +202,37 @@ static view_mode_t s_mode = MODE_SPECTRUM;      /* 0015 */
 static int    s_wf_top, s_wf_h;
 static float  s_wf_frac[LAND_W];           /* this frame's level per column, unsmoothed */
 static float  s_wf_acc;
+
+/*
+ * 0022: the waterfall as a ring, copied to the screen by the PPA.
+ *
+ * 0015 scrolled the shadow with a memmove per column, and on the board
+ * that was 16 ms a frame -- FALL ran at 22 fps against BARS' 46. Now the
+ * waterfall's history is a ring in PSRAM laid out as the screen's panel
+ * rows are: ring row r is graph column s_graph_w-1-r (panel rows run the
+ * other way to landscape columns), and each row is s_wf_h pixels of
+ * time. A frame writes only the newest pixel of each row, at s_wf_pos,
+ * which steps backwards; the PPA then copies the ring into the shadow as
+ * two blocks, [pos, h) and [0, pos), which unrolls it so the newest is
+ * at the top. The copy is the same bytes the memmove moved, but the PPA
+ * moves them, not the CPU.
+ *
+ * CACHE. The driver writes the ring back itself (C2M over the input),
+ * but INVALIDATES the output's whole panel rows (M2C, aligned outward)
+ * before the copy. Those rows also hold the strip's bars, painted by the
+ * CPU this frame and maybe not yet written back: an invalidate would
+ * throw them away. So the rows -- one more either side, for the
+ * outward alignment -- are written back here first.
+ *
+ * ALIGNMENT. The PPA wants its output buffer cache-line aligned, and
+ * the shadow is gfx's heap_caps_malloc(), which does not promise it. If
+ * it is not aligned, or the PPA cannot be had, the waterfall scrolls by
+ * 0015's memmove as before, and the log says which.
+ */
+static ppa_client_handle_t s_ppa;
+static uint16_t *s_wf_ring;
+static int       s_wf_pos;
+static bool      s_wf_ppa_failed;
 static uint16_t s_heat[256];               /* spectrum_heat_rgb(), as 565 */
 
 /* 0016: the 1/3-octave view. Its bands reuse s_level/s_peak/s_prev_*
@@ -783,10 +817,111 @@ static void render(float dt, int *x0, int *x1)
 
 /* 0015: move the waterfall down `n` rows and paint the newest at the
  * top, straight in the shadow's panel rows. Returns the dirty columns. */
+/* 0022: the PPA, once, if the shadow is aligned for it. */
+static void waterfall_ppa_init(void)
+{
+    /* 128: the P4's largest cache line (L2 at most; L1 is 64). The
+     * public esp_cache.h has no query for it in IDF 5.5 -- that is
+     * esp_private -- and the driver checks again regardless, so a guess
+     * too strict costs only the memmove, never a bad copy. */
+    const size_t align = 128;
+    if ((uintptr_t)gfx_fb() % align != 0) {
+        ESP_LOGW(TAG, "waterfall: shadow buffer at %p is not %u-byte aligned; "
+                 "scrolling by memmove", (void *)gfx_fb(), (unsigned)align);
+        return;
+    }
+    const ppa_client_config_t cfg = { .oper_type = PPA_OPERATION_SRM, .max_pending_trans_num = 1 };
+    const esp_err_t err = ppa_register_client(&cfg, &s_ppa);
+    if (err != ESP_OK) {
+        s_ppa = NULL;
+        ESP_LOGW(TAG, "waterfall: no PPA (%s); scrolling by memmove", esp_err_to_name(err));
+        return;
+    }
+    ESP_LOGI(TAG, "waterfall: PPA ring");
+}
+
+/* 0022: a cleared ring for a fresh waterfall. */
+static void waterfall_ring_reset(void)
+{
+    s_wf_pos = 0;
+    if (!s_ppa || s_wf_ppa_failed) return;
+    const size_t n = (size_t)LAND_W * (size_t)s_wf_h;
+    if (!s_wf_ring) {
+        s_wf_ring = heap_caps_calloc(n, sizeof(uint16_t), MALLOC_CAP_SPIRAM);
+        if (!s_wf_ring) ESP_LOGW(TAG, "waterfall: no room for the ring; scrolling by memmove");
+        return;
+    }
+    memset(s_wf_ring, 0, n * sizeof(uint16_t));
+}
+
+/* 0022: one block of the ring, ring columns [rx, rx+w), to the shadow at
+ * time offset ox. */
+static esp_err_t waterfall_copy(int rx, int w, int ox, int rows, int py0)
+{
+    const ppa_srm_oper_config_t op = {
+        .in = {
+            .buffer = s_wf_ring, .pic_w = (uint32_t)s_wf_h, .pic_h = (uint32_t)LAND_W,
+            .block_w = (uint32_t)w, .block_h = (uint32_t)rows,
+            .block_offset_x = (uint32_t)rx, .block_offset_y = 0,
+            .srm_cm = PPA_SRM_COLOR_MODE_RGB565,
+        },
+        .out = {
+            .buffer = gfx_fb(),
+            .buffer_size = (uint32_t)gfx_w() * (uint32_t)gfx_h() * sizeof(uint16_t),
+            .pic_w = (uint32_t)gfx_w(), .pic_h = (uint32_t)gfx_h(),
+            .block_offset_x = (uint32_t)(landmap_px(0, s_wf_top, LAND_W) + ox),
+            .block_offset_y = (uint32_t)py0,
+            .srm_cm = PPA_SRM_COLOR_MODE_RGB565,
+        },
+        .rotation_angle = PPA_SRM_ROTATION_ANGLE_0,
+        .scale_x = 1.0f, .scale_y = 1.0f,
+        .mode = PPA_TRANS_MODE_BLOCKING,
+    };
+    return ppa_do_scale_rotate_mirror(s_ppa, &op);
+}
+
+/* 0022: the ring's frame: n new rows of time, then the copy. */
+static bool waterfall_push_ring(int n)
+{
+    if (!s_ppa || !s_wf_ring || s_wf_ppa_failed) return false;
+    const int rows = s_graph_w - s_first_col;
+    if (rows <= 0) return true;
+    for (int i = 0; i < n; i++) {
+        s_wf_pos = (s_wf_pos + s_wf_h - 1) % s_wf_h;
+        for (int b = s_first_col; b < s_graph_w; b++)
+            s_wf_ring[(size_t)(s_graph_w - 1 - b) * (size_t)s_wf_h + (size_t)s_wf_pos] =
+                s_heat[(int)(s_wf_frac[b] * 255.0f + 0.5f)];
+    }
+
+    /* The panel rows the copy lands in, plus one either side: written
+     * back before the driver invalidates them. See the CACHE note. */
+    const int stride = gfx_w();
+    const int py0 = landmap_py(s_left + s_graph_w - 1, 0, LAND_W);
+    int wb0 = py0 - 1, wb1 = py0 + rows + 1;
+    if (wb0 < 0) wb0 = 0;
+    if (wb1 > gfx_h()) wb1 = gfx_h();
+    esp_cache_msync(gfx_fb() + (size_t)wb0 * (size_t)stride,
+                    (size_t)(wb1 - wb0) * (size_t)stride * sizeof(uint16_t),
+                    ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
+
+    esp_err_t err = waterfall_copy(s_wf_pos, s_wf_h - s_wf_pos, 0, rows, py0);
+    if (err == ESP_OK && s_wf_pos > 0) err = waterfall_copy(0, s_wf_pos, s_wf_h - s_wf_pos, rows, py0);
+    if (err != ESP_OK) {
+        /* Once, then memmove for good: the screen's waterfall is
+         * whatever the last good copy left, and scrolls on from there. */
+        ESP_LOGE(TAG, "waterfall: PPA copy failed (%s); scrolling by memmove from now",
+                 esp_err_to_name(err));
+        s_wf_ppa_failed = true;
+        return false;
+    }
+    return true;
+}
+
 static void waterfall_push(int n, int *x0, int *x1)
 {
     if (n <= 0 || s_mode != MODE_WATERFALL) return;
     if (n > s_wf_h) n = s_wf_h;
+    if (waterfall_push_ring(n)) goto dirty;     /* 0022 */
     uint16_t *fb = gfx_fb();
     const int stride = gfx_w();
     for (int b = s_first_col; b < s_graph_w; b++) {
@@ -797,6 +932,7 @@ static void waterfall_push(int n, int *x0, int *x1)
         const uint16_t c = s_heat[(int)(s_wf_frac[b] * 255.0f + 0.5f)];
         for (int i = 0; i < n; i++) row[i] = c;
     }
+dirty:;
     const int l = s_left + s_first_col, r = s_left + s_graph_w;
     if (*x1 <= *x0) { *x0 = l; *x1 = r; return; }
     if (l < *x0) *x0 = l;
@@ -832,6 +968,7 @@ static const float k_source_floor_hz[SRC_COUNT] = {
 static void layout_for(uint32_t rate, int src)
 {
     set_geometry();                         /* 0015: by the mode */
+    if (s_mode == MODE_WATERFALL) waterfall_ring_reset();   /* 0022 */
     s_max_hz = (float)rate / 2.0f;
     s_first_col = spectrum_freq_x_at(k_source_floor_hz[src], s_graph_w, s_max_hz);
     for (int b = 0; b < s_graph_w; b++) {
@@ -927,6 +1064,7 @@ void app_main(void)
     esp_lcd_panel_handle_t panel;
     ESP_ERROR_CHECK(lcd_init(&panel));
     ESP_ERROR_CHECK(gfx_init(panel, LCD_H_RES, LCD_V_RES));     /* GFX_ROT_0: see LAND_W */
+    waterfall_ppa_init();                   /* 0022 */
 
     /* 0014: touch, for resetting the meter. Not fatal: without it the
      * meter resets on a source change only. */

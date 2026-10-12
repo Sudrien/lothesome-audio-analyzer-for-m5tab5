@@ -513,3 +513,39 @@ FALL drew in 35 ms against BARS' 18. The log's `draw` is now split
 into `bars` (render()), `fall` (waterfall_push()) and `blit`, to say
 whether the difference is the scroll's memmove, the cache writeback of
 what it dirtied (paid inside the blit), or both, before choosing a fix.
+
+### 0022 -- the waterfall as a ring, copied by the PPA
+
+On the board 0021 split FALL's 35 ms frame into bars 4.3, fall 16.2 and
+blit 14.9: the memmove scroll was all of the difference, 920 KB moved
+by the CPU through PSRAM each frame, whatever the number of new rows.
+
+The history is now a ring in PSRAM, laid out as the screen's panel
+rows: ring row r is graph column s_graph_w-1-r, each row s_wf_h px of
+time. A frame writes the newest pixel of each row at s_wf_pos, which
+steps backwards, and the PPA (`esp_driver_ppa`, scale-rotate-mirror at
+scale 1, blocking) copies the ring into the shadow as two blocks,
+[pos, h) and [0, pos), unrolling it newest-first. The bytes are the
+same; the mover is not.
+
+Two hazards, from the driver's source rather than its header:
+
+- It invalidates the output's panel rows -- whole rows, aligned
+  outward -- before the copy. Those rows also hold the strip's bars,
+  painted by the CPU this frame. So the rows and one either side are
+  written back (`esp_cache_msync` C2M) first, or this frame's bars
+  would be thrown away.
+- It wants the output buffer cache-line aligned, and the shadow is
+  gfx's `heap_caps_malloc()`. Without 128-byte alignment -- the P4's
+  largest line; IDF 5.5's query for it is private -- or without a PPA,
+  or on the first failed copy, the waterfall scrolls by 0015's memmove
+  and the log says why. feckless-graphics-handler gets a patch to
+  allocate the shadow aligned.
+
+test/render's stub has a software PPA with the driver's checks, and
+renders FALL both ways for a USB microphone and for the built-in ones:
+the ring and the memmove agree to the pixel. What it cannot check is
+the cache: that is for the board.
+
+`main/CMakeLists.txt` requires `esp_driver_ppa` and `esp_mm`; both are
+IDF's own, so `dependencies.lock` does not move.
