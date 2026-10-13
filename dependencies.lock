@@ -77,6 +77,23 @@ dependencies:
       registry_url: https://components.espressif.com/
       type: service
     version: 1.0.2
+  espressif/usb:
+    component_hash: 99eee72ea224d9117d4c342442717a1f20bf8112e2ab5d7d7038b827874f4c92
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=5.5.3'
+    source:
+      registry_url: https://components.espressif.com
+      type: service
+    targets:
+    - esp32s2
+    - esp32s3
+    - esp32s31
+    - esp32p4
+    - esp32h4
+    - linux
+    version: 1.6.0
   espressif/usb_host_uac:
     component_hash: 02f7e669b4dae033347e4523acaed4b8c402290a887878d396811c4bee47cc46
     dependencies:
@@ -134,7 +151,7 @@ dependencies:
   idf:
     source:
       type: idf
-    version: 5.5.5
+    version: 6.1.0
 direct_dependencies:
 - espressif/esp-dsp
 - espressif/usb_host_uac
@@ -143,4 +160,4 @@ direct_dependencies:
 - idf
 manifest_hash: e5c1df2c0fee827a92234cf4f6db8ce49e837b0f5c54a457cbf01fbdd8368151
 target: esp32p4
-version: 2.0.0
+version: 3.0.0
