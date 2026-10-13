@@ -625,3 +625,26 @@ usb_host_uac keeps the first `CONFIG_UAC_FREQ_NUM_MAX` (default 4), so
 offered, and the microphone ran at 44.1. `sdkconfig.defaults` sets it to
 8. It needs `rm sdkconfig` before the next build, as every change to
 the defaults does.
+
+### 0028 -- 24-bit USB microphones
+
+feckless-drivers v0.4.0 has `uac_mic_open_bits()`: a microphone at up
+to 24 bits -- 24 in a 3- or 4-byte subframe, or 32 in 4 read at its top
+24 -- preferred over 16 at the same rate, with the width it started
+said back. `uac_mic_open()` is the same at 16, so the player, which
+records what it reads, is unchanged.
+
+The capture task asks for 24. A 24-bit microphone's values arrive at
+the 24-bit full scale `spectrum.h` measures against and go in as they
+are; a 16-bit one's still go up by 256. The source label adds
+", 24-bit" when it is, and the log line says the width either way.
+
+The test device is a Synaptics/Conexant USB-C headset adapter
+(0572:1b08), which offers the same input at 16 bits (alt 1) and 24
+(alt 2), both at 44.1 and 48 kHz: one tone should read the same dBFS at
+either width, with a lower floor at 24. The unpacking itself is
+host-tested in feckless-drivers' test/micpcmtest.c.
+
+`main/idf_component.yml` moves feckless-drivers to v0.4.0, so the next
+build re-resolves `dependencies.lock`: read its diff before committing
+it.

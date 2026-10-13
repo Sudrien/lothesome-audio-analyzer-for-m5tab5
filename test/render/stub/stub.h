@@ -118,6 +118,7 @@ static inline void uac_mic_close(void) {}
 static inline bool uac_mic_announced(void) { return false; }
 static inline uint32_t uac_generation(void) { return 0; }
 static inline esp_err_t uac_mic_open(uint32_t *r, uint8_t *c) { (void)r; (void)c; return ESP_FAIL; }
+static inline esp_err_t uac_mic_open_bits(uint32_t *r, uint8_t *c, uint8_t m, uint8_t *b) { (void)r; (void)c; (void)m; (void)b; return ESP_FAIL; }
 static inline const char *uac_mic_product(void) { return ""; }
 static inline size_t uac_mic_read(int32_t *f, size_t n, int ms) { (void)f; (void)n; (void)ms; return 0; }
 

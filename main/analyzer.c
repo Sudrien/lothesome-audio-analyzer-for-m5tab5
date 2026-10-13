@@ -538,6 +538,7 @@ static const char *const k_source_name[SRC_COUNT] = {
 static volatile uint32_t s_rate = SPECTRUM_SAMPLE_RATE;
 static char s_usb_label[48];
 static uint8_t s_usb_channels;
+static uint8_t s_usb_bits = 16;       /* 0028: the width uac_mic_read() hands back */
 static uint32_t s_usb_refused_gen = UINT32_MAX;   /* uac_generation() at a refusal */
 
 #define SOURCE_POLL_US      (250000)    /* how often a plug is looked for */
@@ -607,26 +608,31 @@ static void capture_task(void *arg)
                 }
             } else if (uac_mic_announced() && uac_generation() != s_usb_refused_gen) {
                 uint32_t rate = 0;
-                uint8_t ch = 0;
-                const esp_err_t err = uac_mic_open(&rate, &ch);
+                uint8_t ch = 0, bits = 16;
+                /* 0028: up to 24 bits; a 16-bit microphone opens as before. */
+                const esp_err_t err = uac_mic_open_bits(&rate, &ch, 24, &bits);
                 if (err == ESP_OK) {
                     audio_out_capture_end();        /* the ES7210 is not wanted */
                     s_usb_channels = ch;
+                    s_usb_bits = bits;
                     /* 0010: product strings arrive space-padded ("C-Media
                      * USB Headphone Set  "), which the label does not want. */
                     char product[40];
                     snprintf(product, sizeof(product), "%s", uac_mic_product());
                     for (size_t len = strlen(product); len && product[len - 1] == ' '; )
                         product[--len] = '\0';
+                    /* 0028: the width on screen when it is 24, so a device
+                     * offering both can be told apart at a glance. */
+                    const char *w = bits == 24 ? ", 24-bit" : "";
                     if (rate == SPECTRUM_SAMPLE_RATE)
-                        snprintf(s_usb_label, sizeof(s_usb_label), "USB %.30s", product);
+                        snprintf(s_usb_label, sizeof(s_usb_label), "USB %.24s%s", product, w);
                     else
-                        snprintf(s_usb_label, sizeof(s_usb_label), "USB %.24s, %u kHz",
-                                 product, (unsigned)(rate / 1000));
+                        snprintf(s_usb_label, sizeof(s_usb_label), "USB %.18s, %u kHz%s",
+                                 product, (unsigned)(rate / 1000), w);
                     s_rate = rate;
                     next = SRC_USB;
-                    ESP_LOGI(TAG, "source: USB microphone \"%s\", %u Hz, %u ch",
-                             product, (unsigned)rate, (unsigned)ch);
+                    ESP_LOGI(TAG, "source: USB microphone \"%s\", %u Hz, %u ch, %u-bit",
+                             product, (unsigned)rate, (unsigned)ch, (unsigned)bits);
                 } else {
                     s_usb_refused_gen = uac_generation();
                     ESP_LOGW(TAG, "USB microphone refused: %s", esp_err_to_name(err));
@@ -648,10 +654,11 @@ static void capture_task(void *arg)
             const size_t n = uac_mic_read(s_frames, CAPTURE_CHUNK, 100);
             const int ch = s_usb_channels == 2 ? 2 : 1;
             for (size_t i = 0; i < n; i++) {
-                /* 16-bit values, one or two channels: to mono at 24-bit scale. */
+                /* One or two channels, to mono at 24-bit scale: 16-bit
+                 * values up by 256, 24-bit ones as they are (0028). */
                 const float v = ch == 2 ? ((float)s_frames[2 * i] + (float)s_frames[2 * i + 1]) * 0.5f
                                         : (float)s_frames[i];
-                s_chunk[i] = v * 256.0f;
+                s_chunk[i] = s_usb_bits == 24 ? v : v * 256.0f;
             }
             if (n) feed(s_chunk, n);
             else   vTaskDelay(pdMS_TO_TICKS(2));
