@@ -7,7 +7,7 @@ dependencies:
   # branch would change underneath a build that worked.
   feckless_drivers:
     git: https://github.com/Sudrien/feckless-drivers-for-m5tab5.git
-    version: "v0.4.0"   # 0028: uac_mic_open_bits(), 24-bit microphones
+    version: "v0.5.0"   # 0030: audio_out_monitor_write()
   feckless_graphics_handler:
     git: https://github.com/Sudrien/feckless-graphics-handler-for-m5tab5.git
     version: "v0.2.0"

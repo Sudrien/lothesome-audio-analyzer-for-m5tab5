@@ -23,6 +23,7 @@ typedef int esp_err_t;
 #define ESP_OK              0
 #define ESP_FAIL            (-1)
 #define ESP_ERR_NOT_FOUND   0x105
+#define ESP_ERR_INVALID_STATE 0x103
 #define ESP_ERROR_CHECK(x)  do { (void)(x); } while (0)
 #define ESP_LOGI(tag, ...)  do { (void)(tag); } while (0)
 #define ESP_LOGW(tag, ...)  do { (void)(tag); } while (0)
@@ -126,6 +127,13 @@ static inline esp_err_t touch_init(i2c_master_bus_handle_t b, int w, int h) { (v
 static inline bool touch_get(int *x, int *y) { (void)x; (void)y; return false; }
 static inline bool touch_present(void) { return false; }
 static inline void touch_set_rotation(int q) { (void)q; }
+/* 0030 */
+static inline esp_err_t audio_out_monitor_write(const int16_t *s, size_t n) { (void)s; (void)n; return ESP_OK; }
+static inline esp_err_t audio_out_set_volume(uint8_t p) { (void)p; return ESP_OK; }
+static inline bool uac_present(void) { return false; }
+static inline esp_err_t uac_stream_start(uint32_t r, uint8_t c) { (void)r; (void)c; return ESP_FAIL; }
+static inline void uac_stream_stop(void) {}
+static inline esp_err_t uac_write(const void *d, size_t l, uint32_t t) { (void)d; (void)l; (void)t; return ESP_OK; }
 
 /* ---- 0026: the heap ---- */
 #include <stdlib.h>

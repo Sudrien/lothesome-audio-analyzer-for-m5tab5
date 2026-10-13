@@ -659,3 +659,31 @@ transfer max length`. Its configuration descriptor is 365 bytes
 Snowball's 177 bytes had fit. `sdkconfig.defaults` sets 1024: one such
 buffer per attached device. Like every change to the defaults, it needs
 `rm sdkconfig` before the next build.
+
+### 0030 -- monitoring
+
+MON, left of FAST/SLOW and in every view, off at every boot: what a
+headset's microphone hears, back in its own headphones, at a fixed
+`MON_VOLUME` (40 %, `audio_out_set_volume()`, which sets both the codec
+and a USB device).
+
+- The jack: feckless-drivers v0.5.0's `audio_out_monitor_write()`, the
+  one write a capture lets through, and only for a headset capture with
+  the route on the headphones. The jack's capture and its playback run
+  off the same clocks (5209), so nothing drifts.
+- USB: the same device's output, `uac_present()`, started at the
+  microphone's rate in stereo; a refused start is logged once per
+  attach and not retried.
+- Never the built-in microphones and never the speaker: they would
+  feed back. With such a source MON is drawn dim and does nothing until
+  the source changes.
+
+The capture task converts each chunk, mono at 24-bit scale, to 16-bit
+stereo and hands it over without blocking: either output drops a block
+it has no room for, so the analysis never waits on the headphones.
+Latency is the outputs' buffering, a few tens of milliseconds.
+
+5106's note in audio_out.c says 16-bit audio written to the capture's
+re-clocked TX "would reach the DAC as noise"; it was written about the
+duplex pair 5209 replaced. If the jack's monitoring is noise, that note
+still holds and the TX needs 32-bit samples for it.

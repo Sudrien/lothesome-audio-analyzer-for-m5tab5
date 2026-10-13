@@ -129,6 +129,17 @@ static const char *TAG = "analyzer";
 #define MODE_HIT_Y1         (66)     /* MODE_Y + MODE_H is 42 */
 #define WEIGHT_HIT_Y0       (MODE_HIT_Y1)
 #define WEIGHT_HIT_Y1       (150)    /* WEIGHT_Y + WEIGHT_H is 100 */
+
+/*
+ * 0030: monitoring -- what a headset hears, back in its ears. MON, left
+ * of FAST/SLOW and in every view, off at every boot. It plays only to a
+ * headset's own headphones: the jack's, through feckless-drivers'
+ * audio_out_monitor_write(), or a USB headset's own output, never the
+ * speaker and never for the built-in microphones, which the speaker
+ * would feed back into. At a fixed level, MON_VOLUME.
+ */
+#define MON_X               (WEIGHT_X - 10 - MODE_W)
+#define MON_VOLUME          (40)     /* percent: audio_out_set_volume(), both outputs */
 #define OCT_GAP             (6)      /* between bands */
 #define COL_PARTIAL         ((uint16_t)0x7BEF)   /* a band cut by Nyquist */
 
@@ -364,6 +375,8 @@ static void draw_mode_buttons(void)
 }
 
 /* 0016: the Fast/Slow switch, shown only in the 1/3-octave view. */
+static void draw_mon_button(void);        /* 0030: below, after the sources */
+
 static void draw_weight_button(void)
 {
     const char *t = s_oct_slow ? "SLOW" : "FAST";
@@ -408,6 +421,7 @@ static void draw_static(void)
 {
     land_fill(0, 0, s_w, s_h, COL_BLACK);
     land_text(10, 4, "Lothesome Audio Analyzer", TITLE_SCALE, COL_WHITE);
+    draw_mon_button();                      /* 0030: every view */
 
     for (int h = 0; h <= s_graph_h; h++) {
         int r, g;
@@ -545,6 +559,29 @@ static uint32_t s_usb_refused_gen = UINT32_MAX;   /* uac_generation() at a refus
 
 static volatile int s_source = SRC_BUILTIN;
 
+static volatile bool s_mon_want;          /* 0030: the button; read by the capture task */
+static bool          s_mon_usb_on;        /* the USB output streaming for it */
+static uint32_t      s_mon_usb_refused;   /* uac_generation() at a refused start */
+static int16_t       s_mon_buf[CAPTURE_CHUNK * 2];
+
+/* 0030: whether the source can be monitored now. */
+static bool mon_possible(int src)
+{
+    return src == SRC_JACK || (src == SRC_USB && uac_present());
+}
+
+/* 0030: MON, lit when on and possible, dim when the source cannot be. */
+static void draw_mon_button(void)
+{
+    const bool can = mon_possible(s_source), on = s_mon_want && can;
+    const int label_h = ARK12_H * LABEL_SCALE, tw = land_text_w("MON", LABEL_SCALE);
+    land_fill(MON_X - 1, WEIGHT_Y - 1, MODE_W + 2, WEIGHT_H + 2, COL_BASE);
+    land_fill(MON_X, WEIGHT_Y, MODE_W, WEIGHT_H, on ? COL_LABEL : COL_BLACK);
+    land_text(MON_X + (MODE_W - tw) / 2, WEIGHT_Y + (WEIGHT_H - label_h) / 2, "MON",
+              LABEL_SCALE, on ? COL_BLACK : (can ? COL_LABEL : COL_BASE));
+}
+
+
 /* Switch the ES7210's capture between the array and the jack. On a
  * failure, back to the array: a capture that is running beats one that
  * is not. 0008: also the way back from USB, when nothing is capturing
@@ -584,6 +621,44 @@ static void feed(const float *mono, size_t n)
     s_pub_lcpeak = spectrum_lcpeak(&s_meter);
     s_pub_secs   = (float)((double)s_meter.n / s_meter.rate);
     s_pub_clip   = s_meter.clipped;
+}
+
+/*
+ * 0030: one chunk of the source, mono at 24-bit scale, to the headset's
+ * own headphones if MON is on. Never blocks: either output drops a block
+ * it has no room for rather than hold the capture up.
+ */
+static void monitor(int src, const float *mono, size_t n)
+{
+    const bool want = s_mon_want && mon_possible(src);
+    if (!want || src != SRC_USB) {
+        if (s_mon_usb_on) { uac_stream_stop(); s_mon_usb_on = false; }
+    }
+    if (!want || !n) return;
+    for (size_t i = 0; i < n; i++) {
+        float v = mono[i] / 256.0f;
+        if (v > 32767.0f) v = 32767.0f;
+        if (v < -32768.0f) v = -32768.0f;
+        s_mon_buf[2 * i] = s_mon_buf[2 * i + 1] = (int16_t)v;
+    }
+    if (src == SRC_JACK) {
+        audio_out_monitor_write(s_mon_buf, n);
+        return;
+    }
+    if (!s_mon_usb_on) {
+        if (uac_generation() == s_mon_usb_refused) return;
+        const esp_err_t err = uac_stream_start(s_rate, 2);
+        if (err != ESP_OK) {
+            s_mon_usb_refused = uac_generation();
+            ESP_LOGW(TAG, "monitor: USB output refused %u Hz stereo (%s)",
+                     (unsigned)s_rate, esp_err_to_name(err));
+            return;
+        }
+        s_mon_usb_on = true;
+        ESP_LOGI(TAG, "monitor: USB output at %u Hz", (unsigned)s_rate);
+    }
+    if (uac_write(s_mon_buf, n * 2 * sizeof(int16_t), 0) == ESP_ERR_INVALID_STATE)
+        s_mon_usb_on = false;               /* unplugged: the next chunk starts it again */
 }
 
 /* 0003: reads the microphones for as long as the program runs. */
@@ -660,7 +735,7 @@ static void capture_task(void *arg)
                                         : (float)s_frames[i];
                 s_chunk[i] = s_usb_bits == 24 ? v : v * 256.0f;
             }
-            if (n) feed(s_chunk, n);
+            if (n) { feed(s_chunk, n); monitor(cur, s_chunk, n); }    /* 0030 */
             else   vTaskDelay(pdMS_TO_TICKS(2));
             continue;
         }
@@ -676,7 +751,7 @@ static void capture_task(void *arg)
                 s_chunk[i] = ((float)s_frames[2 * i] + (float)s_frames[2 * i + 1]) * 0.5f;
             }
         }
-        if (n) feed(s_chunk, n);
+        if (n) { feed(s_chunk, n); monitor(cur, s_chunk, n); }        /* 0030 */
         else   vTaskDelay(pdMS_TO_TICKS(2));
     }
 }
@@ -1112,8 +1187,17 @@ void app_main(void)
                         ESP_LOGI(TAG, "mode: %s", want == MODE_WATERFALL ? "waterfall" :
                                                   want == MODE_OCT ? "1/3 octave" : "bars");
                     }
+                } else if (ty >= WEIGHT_HIT_Y0 && ty < WEIGHT_HIT_Y1 &&
+                           tx >= MON_X - 10 && tx < MON_X + MODE_W + 5) {      /* 0030: MON */
+                    press_on_mode = true;
+                    s_mon_want = !s_mon_want;
+                    if (s_mon_want) audio_out_set_volume(MON_VOLUME);
+                    ESP_LOGI(TAG, "monitor: %s%s", s_mon_want ? "on" : "off",
+                             s_mon_want && !mon_possible(s_source) ? " (not for this source)" : "");
+                    draw_mon_button();
+                    land_blit(MON_X - 1, MON_X + MODE_W + 1);
                 } else if (s_mode == MODE_OCT && ty >= WEIGHT_HIT_Y0 && ty < WEIGHT_HIT_Y1 &&
-                           tx >= WEIGHT_X - 10 && tx < WEIGHT_X + WEIGHT_W + 10) {     /* 0021 */
+                           tx >= WEIGHT_X - 5 && tx < WEIGHT_X + WEIGHT_W + 10) {     /* 0021, 0030 */
                     /* 0016: Fast <-> Slow. The averages carry on, so the
                      * bars glide to the new weighting rather than jump. */
                     press_on_mode = true;
