@@ -125,3 +125,8 @@ static inline esp_err_t touch_init(i2c_master_bus_handle_t b, int w, int h) { (v
 static inline bool touch_get(int *x, int *y) { (void)x; (void)y; return false; }
 static inline bool touch_present(void) { return false; }
 static inline void touch_set_rotation(int q) { (void)q; }
+
+/* ---- 0026: the heap ---- */
+#include <stdlib.h>
+#define MALLOC_CAP_SPIRAM   (1u << 10)
+static inline void *heap_caps_malloc(size_t sz, uint32_t caps) { (void)caps; return malloc(sz); }

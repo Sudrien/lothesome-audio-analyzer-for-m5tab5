@@ -35,6 +35,7 @@
 #include "esp_dsp.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "esp_heap_caps.h"  /* 0026 */
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -210,7 +211,10 @@ static float  s_wf_acc;
  */
 #define WF_BATCH            (4)
 #define WF_QUEUE            (16)     /* a slow frame can owe more than a batch */
-static uint16_t s_wf_q[WF_QUEUE][LAND_W];  /* oldest first, by column b */
+/* 0026: in PSRAM. As a static it was 40 KB of the internal RAM the
+ * capture and USB DMA buffers need; on the board the largest free
+ * DMA-capable block fell from 168 KB to 104 KB. */
+static uint16_t (*s_wf_q)[LAND_W];         /* [WF_QUEUE], oldest first, by column b */
 static int      s_wf_qn;
 static uint16_t s_heat[256];               /* spectrum_heat_rgb(), as 565 */
 
@@ -800,6 +804,10 @@ static void render(float dt, int *x0, int *x1)
 static void waterfall_push(int n, int *x0, int *x1)
 {
     if (n <= 0 || s_mode != MODE_WATERFALL) return;
+    if (!s_wf_q) {                          /* 0026 */
+        s_wf_q = heap_caps_malloc(sizeof(*s_wf_q) * WF_QUEUE, MALLOC_CAP_SPIRAM);
+        if (!s_wf_q) { ESP_LOGE(TAG, "waterfall: no room for the row queue"); return; }
+    }
     /* 0025: queue the owed rows, each with this frame's colours. */
     for (int i = 0; i < n && s_wf_qn < WF_QUEUE; i++, s_wf_qn++)
         for (int b = s_first_col; b < s_graph_w; b++)

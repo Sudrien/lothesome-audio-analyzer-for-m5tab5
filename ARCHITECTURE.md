@@ -600,3 +600,17 @@ frames late. The picture steps 4 px at a time, about ten times a second.
 
 The queue holds 16 rows, which a frame clamped at 0.25 s (10 rows)
 cannot overrun. It is emptied on every layout, with the row clock.
+
+### 0026 -- the waterfall's row queue, in PSRAM
+
+0025 on the board: FALL at about 35 fps with a USB microphone, `fall`
+averaging 4.6 ms, against 22.6 fps and 16.2 ms before. 4 px steps are
+acceptable to look at.
+
+But 0025's queue was a 40 KB static, and a static lands in internal
+RAM: the capture's log of DMA-capable internal memory fell from 267295
+free (largest 172032) to 226283 (largest 106496), exactly the queue's
+size, and that is the memory the I2S and USB DMA buffers come from. It
+is allocated from PSRAM on first use now, like the other large
+buffers. CLAUDE.md's rule keeps big buffers off task stacks; this is the
+other half -- off internal RAM, when they are this big and not DMA's.
