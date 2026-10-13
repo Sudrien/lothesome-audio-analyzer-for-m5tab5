@@ -648,3 +648,14 @@ host-tested in feckless-drivers' test/micpcmtest.c.
 `main/idf_component.yml` moves feckless-drivers to v0.4.0, so the next
 build re-resolves `dependencies.lock`: read its diff before committing
 it.
+
+### 0029 -- USB devices with big descriptors
+
+The first try of 0028 with the Synaptics adapter never reached the
+audio driver: `ENUM: Configuration descriptor larger than control
+transfer max length`. Its configuration descriptor is 365 bytes
+(`wTotalLength 0x016d`), and IDF's USB host reads it into a buffer of
+`CONFIG_USB_HOST_CONTROL_TRANSFER_MAX_SIZE`, 256 by default; the
+Snowball's 177 bytes had fit. `sdkconfig.defaults` sets 1024: one such
+buffer per attached device. Like every change to the defaults, it needs
+`rm sdkconfig` before the next build.

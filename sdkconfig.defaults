@@ -33,3 +33,10 @@ CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 # 44100 and 48000 -- the fifth is the rate uac.c asks for first, so it
 # was dropped and the Snowball ran at 44.1 kHz. 8 leaves room.
 CONFIG_UAC_FREQ_NUM_MAX=8
+
+# 0029: the USB host fetches a device's configuration descriptor into a
+# buffer of this size (default 256). The Synaptics headset adapter's is
+# 365 bytes -- microphone, speaker, mixer and a HID button all in one --
+# and failed enumeration with "Configuration descriptor larger than
+# control transfer max length". 1024 is one buffer per attached device.
+CONFIG_USB_HOST_CONTROL_TRANSFER_MAX_SIZE=1024
