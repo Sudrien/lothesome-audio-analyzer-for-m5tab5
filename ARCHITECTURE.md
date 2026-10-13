@@ -698,3 +698,30 @@ default FIFO split on the P4's high-speed core (hcd_dwc.c,
 lines, 512 bytes. `CONFIG_USB_HOST_HW_BUFFER_BIAS_PERIODIC_OUT` gives RX
 130 lines (520 bytes: the Snowball's IN endpoint is 192, the adapter's
 288), control and bulk 64, and periodic TX the rest. Needs `rm sdkconfig`.
+
+### 0032 -- five stages, a factor of two apart
+
+0013's bass path was one decimation by 16: two FFTs, 48 and 3 kHz, and
+the seam at 1.2 kHz showed -- the noise floor stepped 12 dB (each bin a
+sixteenth as wide holds a sixteenth of the noise, and the bars show the
+largest bin) and the time smear sixteen-fold, a hard edge down the
+waterfall. Now the capture is halved four times, each by a 95-tap
+Blackman half-band (`spectrum_hb()`), into stages at 48, 24, 12, 6 and
+3 kHz, and a band reads the slowest stage whose usable range, 0.8 of
+its Nyquist, holds it whole: seams at 9.6, 4.8, 2.4 and 1.2 kHz, 3 dB
+and a doubling each. The bottom stage is 0013's bass exactly as far as
+the screen can tell: 2.9 Hz bins, 341 ms.
+
+`test/spectrumtest.c` holds each cascade of 1 to 4 halvings flat to its
+split within 0.05 dB and every alias that would fold onto it 70 dB
+down, reads a bin-centred tone at -20 dBFS through each within 0.1 dB,
+and checks the seams' places, that bars never return to a slower stage,
+and that white noise steps 3.01 dB a seam in the 1/3-octave power.
+
+In `analyzer.c` the four new rings are in PSRAM (0026's lesson); the
+old bass ring, FFT buffer and magnitudes, 26 KB of internal RAM, are
+gone, and one FFT buffer serves all five stages in turn. Each frame runs
+five FFTs instead of two, about 1.5 ms more, and the capture task's
+filtering is some 4 M multiply-adds a second. No crossfade at the
+seams, by choice. What stays at each seam is physics: a slower stage
+sees further back, so a sweep's line jogs a little later at each.

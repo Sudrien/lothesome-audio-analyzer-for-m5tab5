@@ -77,28 +77,60 @@ extern "C" {
 #define SPECTRUM_FULL_SCALE_MAG \
     (SPECTRUM_SAMPLE_FULL_SCALE * (SPECTRUM_FFT_SIZE / 2.0f) * SPECTRUM_HAMMING_GAIN)
 
-/* ---- 0013: the bass path ----
+/* ---- 0013, 0032: the stages ----
  * A 1024-point FFT at 48 kHz has 46.9 Hz bins: 20 to 80 Hz is about one
- * bin. So the capture is also low-passed and kept every 16th sample, and
- * a second FFT of the same size runs on that: 3 kHz, 2.9 Hz bins, a
- * 341 ms window. Everything below the split comes from it. The bass
- * moves slower than the treble, as it must -- telling 30 Hz from 33 Hz
- * takes about a third of a second.
+ * bin. So the capture is also halved in rate, again and again, and the
+ * same FFT runs on each: stage k at rate / 2^k. 0013 had two stages, 48
+ * and 3 kHz, a factor of 16 apart, and the seam between them showed: the
+ * noise floor stepped 12 dB (a bin 16 times narrower holds a sixteenth of
+ * the noise) and the time smear 16 times. 0032 has five, a factor of 2
+ * apart:
  *
- * The filter is a Blackman-windowed sinc cut at the decimated Nyquist;
- * its transition is about 520 Hz wide at 48 kHz, so what folds back
- * below the split is from 1760 Hz up, at least 74 dB down.
- * test/spectrumtest.c measures both.
+ *   stage   rate     bin       window   used for (at 48 kHz)
+ *   0       48 kHz   46.9 Hz    21 ms   9.6 kHz up
+ *   1       24       23.4       43      4.8 - 9.6 kHz
+ *   2       12       11.7       85      2.4 - 4.8
+ *   3        6        5.9      171      1.2 - 2.4
+ *   4        3        2.9      341      below 1.2 kHz, as 0013's bass
+ *
+ * so each seam is 3 dB of noise floor and a doubling of smear. A band
+ * reads the slowest stage whose usable range -- SPECTRUM_STAGE_SPLIT of
+ * its Nyquist -- holds it whole. The slower stages move slower, as they
+ * must: telling 30 Hz from 33 Hz takes about a third of a second.
  */
-#define SPECTRUM_BASS_DECIM    (16)
-#define SPECTRUM_BASS_TAPS     (511)            /* odd: symmetric about the middle tap */
-#define SPECTRUM_BASS_HIST     (512)            /* a power of two >= TAPS */
-#define SPECTRUM_BASS_SPLIT    (0.8f)           /* of the decimated Nyquist: 1200 Hz at 48 kHz */
+#define SPECTRUM_STAGES        (5)
+#define SPECTRUM_STAGE_SPLIT   (0.8f)           /* of a stage's Nyquist */
 
-static inline float spectrum_bass_split_hz(float rate)
+/* The top of stage k's usable range: 1200 Hz for stage 4 at 48 kHz. */
+static inline float spectrum_stage_split_hz(float rate, int k)
 {
-    return SPECTRUM_BASS_SPLIT * rate / (2.0f * SPECTRUM_BASS_DECIM);
+    return SPECTRUM_STAGE_SPLIT * rate / (2.0f * (float)(1 << k));
 }
+
+/* The slowest stage that holds a band reaching up to hi_hz. */
+static inline int spectrum_stage_for(float hi_hz, float rate)
+{
+    for (int k = SPECTRUM_STAGES - 1; k > 0; k--)
+        if (hi_hz <= spectrum_stage_split_hz(rate, k)) return k;
+    return 0;
+}
+
+/* Hz a bin, at stage k. */
+static inline float spectrum_stage_hz_per_bin(float rate, int k)
+{
+    return rate / (float)(1 << k) / (float)SPECTRUM_FFT_SIZE;
+}
+
+/*
+ * Each halving is a half-band low-pass then every other sample: a
+ * Blackman-windowed sinc cut at the new Nyquist (a quarter of the old
+ * rate). It must be flat to the split -- 0.8 of the new Nyquist, 0.4 of
+ * the old -- and deep from where anything would fold back onto it, 1.2
+ * of the new Nyquist, 0.6 of the old. test/spectrumtest.c measures both,
+ * one stage and four in cascade.
+ */
+#define SPECTRUM_HB_TAPS       (95)             /* odd: symmetric about the middle tap */
+#define SPECTRUM_HB_HIST       (128)            /* a power of two >= TAPS */
 
 /* ---- Ballistics ----
  * Time constants in seconds rather than per-frame steps, so the display
@@ -118,11 +150,11 @@ static inline float spectrum_hamming(int n, int size)
     return 0.54f - 0.46f * cosf(2.0f * 3.14159265358979f * (float)n / (float)(size - 1));
 }
 
-/* 0013: the bass filter's taps into h[SPECTRUM_BASS_TAPS], unity at DC. */
-static inline void spectrum_bass_filter(float *h)
+/* 0032: the half-band filter's taps into h[SPECTRUM_HB_TAPS], unity at DC. */
+static inline void spectrum_hb_filter(float *h)
 {
-    const int   m  = SPECTRUM_BASS_TAPS - 1;
-    const float fc = 0.5f / (float)SPECTRUM_BASS_DECIM;     /* cycles per sample */
+    const int   m  = SPECTRUM_HB_TAPS - 1;
+    const float fc = 0.25f;                     /* cycles per input sample: the new Nyquist */
     const float pi = 3.14159265358979f;
     float sum = 0.0f;
     for (int n = 0; n <= m; n++) {
@@ -135,27 +167,25 @@ static inline void spectrum_bass_filter(float *h)
     for (int n = 0; n <= m; n++) h[n] /= sum;
 }
 
-/* 0013: the decimator's state. One writer, so no lock. */
+/* One halving's state. One writer, so no lock. */
 typedef struct {
-    float    hist[SPECTRUM_BASS_HIST];
+    float    hist[SPECTRUM_HB_HIST];
     uint32_t pos;
     int      phase;
-} spectrum_decim_t;
+} spectrum_hb_t;
 
-/* Push n samples through; every SPECTRUM_BASS_DECIM-th makes one output
- * in out[]. Returns how many it made: at most n / DECIM + 1. Only the
- * outputs are filtered, which is what makes this cheap. */
-static inline int spectrum_decim(spectrum_decim_t *d, const float *h,
-                                 const float *in, int n, float *out)
+/* Push n samples through; every other one makes an output in out[].
+ * Returns how many: at most n / 2 + 1. Only the outputs are filtered. */
+static inline int spectrum_hb(spectrum_hb_t *d, const float *h, const float *in, int n, float *out)
 {
     int made = 0;
     for (int i = 0; i < n; i++) {
-        d->hist[d->pos++ & (SPECTRUM_BASS_HIST - 1)] = in[i];
-        if (++d->phase < SPECTRUM_BASS_DECIM) continue;
+        d->hist[d->pos++ & (SPECTRUM_HB_HIST - 1)] = in[i];
+        if (++d->phase < 2) continue;
         d->phase = 0;
         float y = 0.0f;
-        for (int k = 0; k < SPECTRUM_BASS_TAPS; k++)
-            y += h[k] * d->hist[(d->pos - 1u - (uint32_t)k) & (SPECTRUM_BASS_HIST - 1)];
+        for (int k = 0; k < SPECTRUM_HB_TAPS; k++)
+            y += h[k] * d->hist[(d->pos - 1u - (uint32_t)k) & (SPECTRUM_HB_HIST - 1)];
         out[made++] = y;
     }
     return made;
@@ -168,7 +198,7 @@ static inline int spectrum_decim(spectrum_decim_t *d, const float *h,
  * between two bins, interpolated, instead of averaging a range.
  */
 typedef struct {
-    bool  bass;             /* 0013: bins of the bass FFT, not the main one */
+    int   stage;            /* 0032: whose FFT's bins (0013's bass is stage 4) */
     bool  narrow;
     float centre_bin;       /* narrow: where to interpolate */
     int   lo_bin, hi_bin;   /* wide: the inclusive range averaged */
@@ -191,15 +221,14 @@ static inline spectrum_band_t spectrum_band_n(int bar, int bars, float rate)
     const float ratio       = (rate / 2.0f) / SPECTRUM_LOG_MIN_HZ;
     const float lo_f = SPECTRUM_LOG_MIN_HZ * powf(ratio, (float)bar / (float)bars);
     const float hi_f = SPECTRUM_LOG_MIN_HZ * powf(ratio, (float)(bar + 1) / (float)bars);
-    /* 0013: a bar wholly under the split reads the bass FFT. */
-    const bool  bass        = hi_f <= spectrum_bass_split_hz(rate);
-    const float hz_per_bin  = rate / (bass ? (float)SPECTRUM_BASS_DECIM : 1.0f) /
-                              (float)SPECTRUM_FFT_SIZE;
+    /* 0013, 0032: the slowest stage that holds the bar whole. */
+    const int   stage       = spectrum_stage_for(hi_f, rate);
+    const float hz_per_bin  = spectrum_stage_hz_per_bin(rate, stage);
     const float lo_b = lo_f / hz_per_bin;
     const float hi_b = hi_f / hz_per_bin;
 
     spectrum_band_t b = { 0 };
-    b.bass = bass;
+    b.stage = stage;
     if (hi_b - lo_b < 1.0f) {
         b.narrow = true;
         b.centre_bin = spectrum_clampf((lo_b + hi_b) * 0.5f, 1.0f, (float)(usable_bins - 2));
@@ -520,7 +549,7 @@ static inline int spectrum_wf_rows(float *acc, float dt, float rows_per_sec)
  * band narrower than a few bins still gets its share and no more. That
  * is what makes pink noise read flat, as a real-time analyzer must; the
  * bars' largest-bin rule (0012) would make it rise 3 dB an octave.
- * Bands wholly under the bass split read the bass FFT, like the bars.
+ * A band reads the slowest stage that holds it whole, like the bars.
  *
  * Power in dB re a full-scale sine, as the meter: by Parseval, a real
  * sine of amplitude A puts N * A^2 * sum(w^2) / 4 into the positive
@@ -536,7 +565,7 @@ static inline float spectrum_oct_centre(int band)
 }
 
 typedef struct {
-    bool  bass;             /* read the bass FFT */
+    int   stage;            /* 0032: whose FFT */
     float lo_b, hi_b;       /* the band's edges, in bins of that FFT */
     bool  partial;          /* the top edge is past Nyquist: the band is short */
 } spectrum_oct_t;
@@ -546,8 +575,8 @@ static inline spectrum_oct_t spectrum_oct_band(int band, float rate)
     const float fc = spectrum_oct_centre(band);
     const float lo = fc * powf(10.0f, -0.05f), hi = fc * powf(10.0f, 0.05f);
     spectrum_oct_t o = { 0 };
-    o.bass = hi <= spectrum_bass_split_hz(rate);
-    const float df = rate / (o.bass ? (float)SPECTRUM_BASS_DECIM : 1.0f) / (float)SPECTRUM_FFT_SIZE;
+    o.stage = spectrum_stage_for(hi, rate);
+    const float df = spectrum_stage_hz_per_bin(rate, o.stage);
     o.lo_b = lo / df;
     o.hi_b = hi / df;
     o.partial = hi > rate / 2.0f;

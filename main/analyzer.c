@@ -170,15 +170,19 @@ static float   s_window[SPECTRUM_FFT_SIZE];
 static float   s_fft[SPECTRUM_FFT_SIZE * 2] __attribute__((aligned(16)));  /* re, im */
 static float   s_mag[SPECTRUM_FFT_SIZE / 2];
 
-/* 0013: the bass path (spectrum.h). The capture task decimates into
- * s_bass_ring; each frame takes its newest window into a second FFT. */
-static float            s_bass_taps[SPECTRUM_BASS_TAPS];
-static spectrum_decim_t s_decim;
-static float            s_bass_chunk[CAPTURE_CHUNK / SPECTRUM_BASS_DECIM + 1];
-static monoring_t       s_bass_ring;
-static float            s_bass_fft[SPECTRUM_FFT_SIZE * 2] __attribute__((aligned(16)));
-static float            s_bass_mag[SPECTRUM_FFT_SIZE / 2];
-static bool             s_bass_ready;    /* a whole bass window has arrived */
+/*
+ * 0013, 0032: the stages (spectrum.h). Stage 0 is s_ring and s_mag. The
+ * capture task halves each chunk four times into the rings of stages 1
+ * to 4, and each frame runs the newest window of every stage through the
+ * one FFT buffer, s_fft, into that stage's magnitudes. The rings are in
+ * PSRAM: four of 16 KB would be internal RAM the DMA needs (0026).
+ */
+static float          s_hb_taps[SPECTRUM_HB_TAPS];
+static spectrum_hb_t  s_hb[SPECTRUM_STAGES];                 /* [1..4] */
+static float          s_hb_buf[2][CAPTURE_CHUNK / 2 + 1];
+static monoring_t    *s_stage_ring[SPECTRUM_STAGES];         /* [0] is &s_ring */
+static float          s_stage_mag[SPECTRUM_STAGES - 1][SPECTRUM_FFT_SIZE / 2];
+static float         *s_mags[SPECTRUM_STAGES];               /* [0] is s_mag */
 
 /*
  * 0014: the sound level meter (spectrum.h), run by the capture task on
@@ -604,12 +608,43 @@ static source_t switch_source(source_t from, source_t to)
     return SRC_BUILTIN;
 }
 
-/* 0013: one chunk of mono to the main ring and, decimated, the bass one. */
+/* 0013, 0032: one chunk of mono to the main ring and, halved, the stages. */
+/* 0032: the stages' rings and filter, once; every stage from nothing. */
+static void stages_reset(void)
+{
+    for (int k = 1; k < SPECTRUM_STAGES; k++) {
+        memset(&s_hb[k], 0, sizeof(s_hb[k]));
+        if (s_stage_ring[k]) memset(s_stage_ring[k], 0, sizeof(monoring_t));
+        memset(s_stage_mag[k - 1], 0, sizeof(s_stage_mag[k - 1]));
+    }
+}
+
+static esp_err_t stages_init(void)
+{
+    spectrum_hb_filter(s_hb_taps);
+    s_stage_ring[0] = &s_ring;
+    s_mags[0] = s_mag;
+    for (int k = 1; k < SPECTRUM_STAGES; k++) {
+        s_stage_ring[k] = heap_caps_malloc(sizeof(monoring_t), MALLOC_CAP_SPIRAM);
+        if (!s_stage_ring[k]) return ESP_ERR_NO_MEM;
+        s_mags[k] = s_stage_mag[k - 1];
+    }
+    stages_reset();
+    return ESP_OK;
+}
+
 static void feed(const float *mono, size_t n)
 {
     monoring_write(&s_ring, mono, n);
-    const int m = spectrum_decim(&s_decim, s_bass_taps, mono, (int)n, s_bass_chunk);
-    if (m) monoring_write(&s_bass_ring, s_bass_chunk, (size_t)m);
+    /* 0032: halved four times, each into its stage's ring. */
+    const float *src = mono;
+    int m = (int)n;
+    for (int k = 1; k < SPECTRUM_STAGES && m > 0; k++) {
+        float *dst = s_hb_buf[k & 1];
+        m = spectrum_hb(&s_hb[k], s_hb_taps, src, m, dst);
+        if (m) monoring_write(s_stage_ring[k], dst, (size_t)m);
+        src = dst;
+    }
 
     if (s_meter_reset_req) {                    /* 0014 */
         spectrum_meter_reset(&s_meter);
@@ -774,37 +809,37 @@ static bool capture(void)
         s_fft[2 * i]     = s_mono[i] * s_window[i];
         s_fft[2 * i + 1] = 0.0f;
     }
-    /* 0013: the bass window, the newest one too. Until a whole one has
-     * arrived (341 ms after boot) the bass bars stay at the floor. */
-    const uint32_t bend = monoring_count(&s_bass_ring);
-    s_bass_ready = bend >= SPECTRUM_FFT_SIZE;
-    if (s_bass_ready) {
-        monoring_newest(&s_bass_ring, bend, s_mono, SPECTRUM_FFT_SIZE);
-        for (int i = 0; i < SPECTRUM_FFT_SIZE; i++) {
-            s_bass_fft[2 * i]     = s_mono[i] * s_window[i];
-            s_bass_fft[2 * i + 1] = 0.0f;
-        }
-    }
     return true;
 }
 
-static void fft(void)
+/* 0032: one FFT of s_fft's windowed samples into mag. */
+static void fft_into(float *mag)
 {
     dsps_fft2r_fc32(s_fft, SPECTRUM_FFT_SIZE);
     dsps_bit_rev_fc32(s_fft, SPECTRUM_FFT_SIZE);
     for (int i = 0; i < SPECTRUM_FFT_SIZE / 2; i++) {
         const float re = s_fft[2 * i], im = s_fft[2 * i + 1];
-        s_mag[i] = sqrtf(re * re + im * im);
+        mag[i] = sqrtf(re * re + im * im);
     }
-    if (!s_bass_ready) {
-        memset(s_bass_mag, 0, sizeof(s_bass_mag));
-        return;
-    }
-    dsps_fft2r_fc32(s_bass_fft, SPECTRUM_FFT_SIZE);       /* 0013 */
-    dsps_bit_rev_fc32(s_bass_fft, SPECTRUM_FFT_SIZE);
-    for (int i = 0; i < SPECTRUM_FFT_SIZE / 2; i++) {
-        const float re = s_bass_fft[2 * i], im = s_bass_fft[2 * i + 1];
-        s_bass_mag[i] = sqrtf(re * re + im * im);
+}
+
+static void fft(void)
+{
+    fft_into(s_mag);                        /* stage 0, windowed by capture() */
+    /* 0032: the slower stages, each its newest window. Until a whole one
+     * has arrived -- 341 ms for stage 4 -- its bars stay at the floor. */
+    for (int k = 1; k < SPECTRUM_STAGES; k++) {
+        const uint32_t end = monoring_count(s_stage_ring[k]);
+        if (end < SPECTRUM_FFT_SIZE) {
+            memset(s_mags[k], 0, (SPECTRUM_FFT_SIZE / 2) * sizeof(float));
+            continue;
+        }
+        monoring_newest(s_stage_ring[k], end, s_mono, SPECTRUM_FFT_SIZE);
+        for (int i = 0; i < SPECTRUM_FFT_SIZE; i++) {
+            s_fft[2 * i]     = s_mono[i] * s_window[i];
+            s_fft[2 * i + 1] = 0.0f;
+        }
+        fft_into(s_mags[k]);
     }
 }
 
@@ -852,7 +887,7 @@ static void render_oct(float dt, int *dl, int *dr)
     const double tau = s_oct_slow ? SPECTRUM_SLOW_TAU : SPECTRUM_FAST_TAU;
     for (int b = 0; b < SPECTRUM_OCT_BANDS; b++) {
         if (s_oct_deaf[b]) continue;
-        const float ms = spectrum_oct_ms(&s_oct[b], s_oct[b].bass ? s_bass_mag : s_mag);
+        const float ms = spectrum_oct_ms(&s_oct[b], s_mags[s_oct[b].stage]);   /* 0032 */
         spectrum_oct_weight(&s_oct_e[b], ms, dt, tau);
         s_level[b] = spectrum_oct_frac(s_oct_e[b]);
         s_peak[b]  = fmaxf(s_level[b], s_peak[b] - SPECTRUM_PEAK_FALL_PER_SEC * dt);
@@ -869,7 +904,7 @@ static void render(float dt, int *x0, int *x1)
         render_oct(dt, &dirty_l, &dirty_r);
     } else {
         for (int b = s_first_col; b < s_graph_w; b++) {
-            const float mag = spectrum_band_mag(&s_band[b], s_band[b].bass ? s_bass_mag : s_mag);
+            const float mag = spectrum_band_mag(&s_band[b], s_mags[s_band[b].stage]);   /* 0032 */
             const float target = spectrum_frac(spectrum_dbfs(mag));
             s_wf_frac[b] = target;              /* 0015: the waterfall takes it raw */
             spectrum_ballistics(target, dt, &s_level[b], &s_peak[b]);
@@ -1065,7 +1100,7 @@ void app_main(void)
         ESP_LOGW(TAG, "no USB host; USB microphones will not be seen");
     }
 
-    spectrum_bass_filter(s_bass_taps);      /* 0013: before capture's first chunk */
+    ESP_ERROR_CHECK(stages_init());         /* 0013, 0032: before capture's first chunk */
     spectrum_meter_init(&s_meter, SPECTRUM_SAMPLE_RATE);   /* 0014: likewise */
     if (xTaskCreatePinnedToCore(capture_task, "capture", CAPTURE_STACK, NULL,
                                 CAPTURE_PRIO, NULL, CAPTURE_CORE) != pdPASS) {

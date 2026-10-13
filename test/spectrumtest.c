@@ -13,6 +13,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "landmap.h"
 #include "monoring.h"
@@ -21,10 +22,10 @@
 static int checks, failures;
 
 /* 0013: a band's top edge in Hz, whichever FFT it reads, so bands on
- * either side of the bass split can be put in order. */
+ * either side of a stage seam can be put in order. */
 static float band_top_hz(const spectrum_band_t *b, float rate)
 {
-    const float hz_per_bin = rate / (b->bass ? SPECTRUM_BASS_DECIM : 1) / SPECTRUM_FFT_SIZE;
+    const float hz_per_bin = spectrum_stage_hz_per_bin(rate, b->stage);   /* 0032 */
     return (b->narrow ? b->centre_bin : (float)b->hi_bin) * hz_per_bin;
 }
 
@@ -76,7 +77,7 @@ static void test_bands(void)
 {
     int narrow = 0;
     float prev_hz = 0;
-    bool was_bass = true;
+    int prev_stage = SPECTRUM_STAGES - 1;
     for (int b = 0; b < SPECTRUM_BARS; b++) {
         const spectrum_band_t s = spectrum_band(b);
         if (s.narrow) {
@@ -89,8 +90,8 @@ static void test_bands(void)
         const float hz = band_top_hz(&s, 48000.0f);
         CHECK(hz >= prev_hz, "bar %d goes backwards", b);
         prev_hz = hz;
-        CHECK(was_bass || !s.bass, "bar %d back on the bass FFT", b);
-        was_bass = s.bass;
+        CHECK(s.stage <= prev_stage, "bar %d back on a slower stage", b);   /* 0032 */
+        prev_stage = s.stage;
     }
     /* 0013: 20 Hz to 24 kHz in 64 log steps is ~11.7% a bar; the bass
      * FFT's bin is 2.9 Hz, so only the first bar or two are narrower
@@ -254,60 +255,89 @@ static void test_columns(void)
           a.centre_bin == b.centre_bin, "spectrum_band_at() is not SPECTRUM_BARS bars");
 }
 
-/* 0013: the bass filter's response at f Hz of 48 kHz, by the definition. */
-static double lp_db(const float *h, double f)
+/* 0032: n half-band stages' response at f Hz of 48 kHz, by the
+ * definition: stage j runs at 48 kHz / 2^j and sees f at that rate. */
+static double hb_db(const float *h, int stages, double f)
 {
-    double re = 0, im = 0;
-    for (int n = 0; n < SPECTRUM_BASS_TAPS; n++) {
-        re += h[n] * cos(2.0 * M_PI * f / 48000.0 * n);
-        im -= h[n] * sin(2.0 * M_PI * f / 48000.0 * n);
+    double db = 0.0;
+    for (int j = 0; j < stages; j++) {
+        const double fs = 48000.0 / (1 << j);
+        double re = 0, im = 0;
+        for (int n = 0; n < SPECTRUM_HB_TAPS; n++) {
+            re += h[n] * cos(2.0 * M_PI * f / fs * n);
+            im -= h[n] * sin(2.0 * M_PI * f / fs * n);
+        }
+        db += 20.0 * log10(sqrt(re * re + im * im) + 1e-12);
     }
-    return 20.0 * log10(sqrt(re * re + im * im) + 1e-12);
+    return db;
 }
 
-/* 0013: the bass path. Flat to the split, deep from where anything would
- * fold back below it, and a tone through the decimator reads the same
- * dBFS on the bass FFT as it would on the main one. */
-static void test_bass(void)
+/* 0032: the stages. Each halving flat to its split and deep where
+ * anything would fold onto it; a tone through k halvings reads the same
+ * dBFS on stage k as on stage 0; bands go to the stage that holds them. */
+static void test_stages(void)
 {
-    static float h[SPECTRUM_BASS_TAPS];
-    spectrum_bass_filter(h);
-    const double split = spectrum_bass_split_hz(48000.0f);
-    CHECK(fabs(split - 1200.0) < 1e-3, "split at %.1f Hz", split);
-    double worst_pass = 0, worst_stop = -999;
-    for (double f = 0; f <= split; f += 5) {
-        const double d = fabs(lp_db(h, f));
-        if (d > worst_pass) worst_pass = d;
-    }
-    /* What folds onto [0, split] at 3 kHz comes from [3000 - split, ...). */
-    for (double f = 3000.0 - split; f <= 24000.0; f += 5) {
-        const double d = lp_db(h, f);
-        if (d > worst_stop) worst_stop = d;
-    }
-    CHECK(worst_pass < 0.05, "passband ripple %.3f dB", worst_pass);
-    CHECK(worst_stop < -70.0, "stopband only %.1f dB", worst_stop);
+    static float h[SPECTRUM_HB_TAPS];
+    spectrum_hb_filter(h);
 
-    /* 100 bass bins is 293 Hz: a bin-centred tone at -20 dBFS, decimated
-     * in capture-sized chunks, then the newest N outputs. */
-    static spectrum_decim_t d;
-    static float in[120], out[120 / SPECTRUM_BASS_DECIM + 1], bass[N * 2];
-    const double f = 100.0 * 3000.0 / N;
-    const double amp = SPECTRUM_SAMPLE_FULL_SCALE * pow(10.0, -20.0 / 20.0);
-    int have = 0;
-    long t = 0;
-    while (have < N * 2) {
-        for (int i = 0; i < 120; i++, t++) in[i] = (float)(amp * sin(2.0 * M_PI * f * t / 48000.0));
-        const int m = spectrum_decim(&d, h, in, 120, out);
-        CHECK(m <= 120 / SPECTRUM_BASS_DECIM + 1, "%d outputs from 120", m);
-        for (int i = 0; i < m && have < N * 2; i++) bass[have++] = out[i];
+    const double splits[] = { 0, 9600, 4800, 2400, 1200 };
+    for (int k = 1; k < SPECTRUM_STAGES; k++) {
+        const double split = spectrum_stage_split_hz(48000.0f, k);
+        CHECK(fabs(split - splits[k]) < 1e-3, "stage %d split at %.1f Hz", k, split);
+        /* Flat to the split, through all k halvings. */
+        double worst_pass = 0;
+        for (double f = 0; f <= split; f += split / 400)
+            if (fabs(hb_db(h, k, f)) > worst_pass) worst_pass = fabs(hb_db(h, k, f));
+        CHECK(worst_pass < 0.05, "stage %d: passband ripple %.3f dB", k, worst_pass);
+        /* What would fold onto [0, split] at stage k's rate comes from
+         * [rate_k - split, ...); the last halving is what removes it. */
+        const double fs_k = 48000.0 / (1 << k);
+        double worst_stop = -999;
+        for (double f = fs_k - split; f <= 24000.0; f += 5) {
+            const double d = hb_db(h, k, f);
+            if (d > worst_stop) worst_stop = d;
+        }
+        CHECK(worst_stop < -70.0, "stage %d: alias only %.1f dB down", k, worst_stop);
     }
-    const float db = spectrum_dbfs((float)dft_mag(bass + N, 100));
-    CHECK(fabsf(db + 20.0f) < 0.1f, "bass tone read %.3f dBFS", db);
 
+    /* A bin-centred tone at -20 dBFS through k halvings, in capture-sized
+     * chunks: bin 100 of stage k's FFT reads -20 there. */
+    for (int k = 1; k < SPECTRUM_STAGES; k++) {
+        static spectrum_hb_t d[SPECTRUM_STAGES];
+        memset(d, 0, sizeof(d));
+        static float a[128], b[128], st[N * 2];
+        const double fs_k = 48000.0 / (1 << k);
+        const double f = 100.0 * fs_k / N;
+        const double amp = SPECTRUM_SAMPLE_FULL_SCALE * pow(10.0, -20.0 / 20.0);
+        int have = 0;
+        long t = 0;
+        while (have < N * 2) {
+            for (int i = 0; i < 120; i++, t++) a[i] = (float)(amp * sin(2.0 * M_PI * f * t / 48000.0));
+            int m = 120;
+            float *src = a, *dst = b;
+            for (int j = 1; j <= k; j++) {
+                const int in_n = m;
+                m = spectrum_hb(&d[j], h, src, m, dst);
+                CHECK(m <= in_n / 2 + 1, "stage %d: %d outputs from %d", j, m, in_n);
+                float *x = src; src = dst; dst = x;
+            }
+            for (int i = 0; i < m && have < N * 2; i++) st[have++] = src[i];
+        }
+        const float db = spectrum_dbfs((float)dft_mag(st + N, 100));
+        CHECK(fabsf(db + 20.0f) < 0.1f, "stage %d tone read %.3f dBFS", k, db);
+    }
+
+    /* Bands to stages, at the table's edges. */
+    CHECK(spectrum_stage_for(20.0f, 48000.0f) == 4, "20 Hz not on stage 4");
+    CHECK(spectrum_stage_for(1199.0f, 48000.0f) == 4 && spectrum_stage_for(1201.0f, 48000.0f) == 3,
+          "the 1.2 kHz seam");
+    CHECK(spectrum_stage_for(2401.0f, 48000.0f) == 2 && spectrum_stage_for(4801.0f, 48000.0f) == 1,
+          "the 2.4 and 4.8 kHz seams");
+    CHECK(spectrum_stage_for(9601.0f, 48000.0f) == 0 && spectrum_stage_for(24000.0f, 48000.0f) == 0,
+          "the 9.6 kHz seam");
     const spectrum_band_t lo = spectrum_band_n(0, 1170, 48000.0f);
-    CHECK(lo.bass, "20 Hz is not on the bass FFT");
     const spectrum_band_t hi = spectrum_band_n(1169, 1170, 48000.0f);
-    CHECK(!hi.bass, "Nyquist is on the bass FFT");
+    CHECK(lo.stage == 4 && hi.stage == 0, "columns at the ends on stages %d and %d", lo.stage, hi.stage);
 }
 
 /* 0014: the weighting curves against the analog ones, held to IEC
@@ -428,16 +458,17 @@ static void test_octaves(void)
     CHECK(fabsf(spectrum_oct_centre(17) - 1000.0f) < 0.01f, "1 kHz not band 17");
     CHECK(fabsf(spectrum_oct_centre(30) - 19953.0f) < 1.0f, "last centre %f", spectrum_oct_centre(30));
 
-    /* A bin-centred tone in a band of the main FFT: 1.25 kHz band, bin 27
-     * (1266 Hz), and 8 kHz band (bin 171, 8016 Hz). */
+    /* A bin-centred tone in a band of stage 0: 10 kHz band, bin 213
+     * (9984 Hz), and 16 kHz band (bin 341, 15984 Hz). 0032: the stages
+     * below are each checked for level in test_stages(). */
     static float x[N];
     static float mag[N / 2];
-    const int tests[][2] = { { 18, 27 }, { 26, 171 } };
+    const int tests[][2] = { { 27, 213 }, { 29, 341 } };
     for (int t = 0; t < 2; t++) {
         tone(x, tests[t][1], -20.0);
         for (int k = 1; k < N / 2; k++) mag[k] = (float)dft_mag(x, k);
         const spectrum_oct_t o = spectrum_oct_band(tests[t][0], 48000.0f);
-        CHECK(!o.bass && !o.partial, "band %d path", tests[t][0]);
+        CHECK(o.stage == 0 && !o.partial, "band %d on stage %d", tests[t][0], o.stage);
         const float db = (float)(10.0 * log10(spectrum_oct_ms(&o, mag) /
                          ((double)SPECTRUM_SAMPLE_FULL_SCALE * SPECTRUM_SAMPLE_FULL_SCALE / 2.0)));
         CHECK(fabsf(db + 20.0f) < 0.3f, "band %d tone read %.2f", tests[t][0], db);
@@ -452,9 +483,9 @@ static void test_octaves(void)
         const double db = 10.0 * log10(spectrum_oct_ms(&o, mag));
         if (b > 0) {
             const spectrum_oct_t p = spectrum_oct_band(b - 1, 48000.0f);
-            /* Across the split the bin width changes 16x, -12.04 dB of
-             * power a bin; within either FFT each band is 1 dB up. */
-            const double want = (o.bass == p.bass) ? 1.0 : 1.0 - 10.0 * log10(16.0);
+            /* 0032: across a seam the bin width doubles per stage, -3.01
+             * dB of power a bin a stage; within a stage each band is 1 dB up. */
+            const double want = 1.0 - 10.0 * log10((double)(1 << (p.stage - o.stage)));
             if (fabs(db - prev - want) > 0.05) {
                 ok = 0;
                 printf("  band %d step %.3f, want %.3f\n", b, db - prev, want);
@@ -463,8 +494,8 @@ static void test_octaves(void)
         prev = db;
     }
     CHECK(ok, "white noise not 1 dB a band");
-    CHECK(spectrum_oct_band(18, 48000.0f).bass == false &&
-          spectrum_oct_band(17, 48000.0f).bass == true, "split not between 1 and 1.25 kHz");
+    CHECK(spectrum_oct_band(17, 48000.0f).stage == 4 && spectrum_oct_band(18, 48000.0f).stage == 3,
+          "the 1.2 kHz seam not between the 1 and 1.25 kHz bands");
     CHECK(spectrum_oct_band(30, 44100.0f).partial && !spectrum_oct_band(30, 48000.0f).partial,
           "20 kHz band partial at the wrong rates");
 
@@ -486,7 +517,7 @@ int main(void)
     test_bands();
     test_ballistics();
     test_columns();
-    test_bass();
+    test_stages();
     test_weighting();
     test_meter();
     test_waterfall();

@@ -59,11 +59,15 @@ Tab5's port.
 
 ## The bass
 
-Below 1.2 kHz the spectrum comes from a second FFT of the sound
-low-passed and decimated to 3 kHz: 2.9 Hz bins instead of 46.9, over a
-341 ms window, so the bass is finer and slower than the treble. The
-part of the axis a source cannot hear is greyed: below 80 Hz for the
-built-in microphones and the jack, nothing for a USB microphone.
+The spectrum comes from five FFTs of the same 1024 points, each at half
+the rate of the one before: 48 kHz above 9.6 kHz, then 24, 12 and 6 kHz,
+and 3 kHz below 1.2 kHz -- 2.9 Hz bins over a 341 ms window at the
+bottom, 46.9 Hz over 21 ms at the top. The lower the frequency, the
+finer and the slower; the four seams are a factor of two each, a small
+step in the noise floor's texture and in how far back in time the
+picture reaches. The part of the axis a source cannot hear is outlined:
+below 80 Hz for the built-in microphones and the jack, nothing for a
+USB microphone.
 
 ## The views
 

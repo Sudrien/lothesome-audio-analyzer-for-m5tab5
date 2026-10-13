@@ -100,7 +100,7 @@ static void save(const char *path)
 static void setup(void)
 {
     for (int i = 0; i < SPECTRUM_FFT_SIZE; i++) s_window[i] = spectrum_hamming(i, SPECTRUM_FFT_SIZE);
-    spectrum_bass_filter(s_bass_taps);
+    stages_init();              /* 0032 */
     s_w = LAND_W;
     s_h = LAND_H;
     for (int i = 0; i < 256; i++) {
@@ -115,8 +115,7 @@ static void setup(void)
 static void run(view_mode_t mode, uint32_t rate, int src, const char *path)
 {
     memset(&s_ring, 0, sizeof(s_ring));
-    memset(&s_bass_ring, 0, sizeof(s_bass_ring));
-    memset(&s_decim, 0, sizeof(s_decim));
+    stages_reset();             /* 0032 */
     memset(s_pink, 0, sizeof(s_pink));
     s_t = 0.0;
     s_rng = 12345;
