@@ -734,3 +734,46 @@ gap reads as "not measured" rather than "quiet". The waterfall still greys
 that strip. A USB source's label now ends in its theoretical dynamic range,
 6.02 x bits + 1.76 dB (98 dB at 16-bit, 146 dB at 24-bit), after the rate when
 it isn't 48 kHz; the product name is trimmed to fit before the mode buttons.
+
+### 0034 -- USB in to USB out, passed through
+
+0030's MON already sent a USB microphone to a USB output, but by way of
+the analysis: monitor() was handed `s_chunk`, the mono fold of the
+microphone at 24-bit scale in float, and divided it back down to 16-bit
+mono on both sides. So a stereo microphone was heard in mono, and a
+24-bit one went through float twice to reach the 16 bits the output
+takes.
+
+monitor() now gets the capture's `s_frames` as well, and for a USB
+source sends those: the microphone's own channels at its own width, as
+uac_mic_read() returned them. `spectrum_passthrough()` (spectrum.h,
+host-tested) turns them into interleaved 16-bit stereo -- a stereo
+microphone's left and right kept apart, a mono one's sample on both
+sides -- and `spectrum_pcm16()` takes a 24-bit value to 16 by rounding
+half away from zero and holding the int16 range, so 24-bit full scale
+does not wrap. Nothing is mixed or re-levelled on the way.
+
+What did not change: the jack's monitoring, which has no raw path to
+pass and stays as 0030 wrote it; MON_VOLUME, a fixed 40 % on both
+outputs, which is a limit on how loud a headset can be made by tapping
+one button; the output's start, refusal and once-per-plug retry; and
+the analysis, which still takes all 24 bits from `s_chunk`.
+
+What it cannot do: 24 bits out. feckless-drivers' uac_write() takes
+16-bit PCM only (uac.h), so a 24-bit microphone is heard at 16. That
+would be a change to that library -- a 24-bit uac_stream_start() and
+the alternate choice behind it -- not to this program.
+
+The microphone and the output can be one device (a USB headset) or,
+behind a hub, two; uac.c opens one of each either way, and nothing here
+depends on which. Both run at the microphone's rate: the output is
+started at s_rate, and a device that cannot take it is refused once per
+plug as before.
+
+`test/spectrumtest.c`: 16-bit values unchanged at both rails; 24-bit
+rounding at the half step either side of zero; full scale held at
++-32767/-32768; v and -v always opposite; stereo order kept; mono
+copied to both sides. analyzer.c is not host-built. Not built with
+ESP-IDF here. No sdkconfig.defaults or idf_component.yml change. On the
+board: a stereo USB microphone's left and right audible apart in the
+headset with MON on, and the same `monitor: USB output at N Hz` line.

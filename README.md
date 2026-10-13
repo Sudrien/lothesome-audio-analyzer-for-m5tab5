@@ -30,7 +30,9 @@ The built-in microphones and the jack hear nothing below 80 Hz; that part
 of the axis is marked with a red line at -90 dBFS.
 
 **MON** sends the source to headphones on the jack or a USB headset, at a
-fixed volume. It is off at power-up.
+fixed volume. It is off at power-up. A USB microphone is passed straight
+through to the USB output: its own channels, so a stereo one stays
+stereo, at 16 bits.
 
 ## Views
 

@@ -654,19 +654,30 @@ static void feed(const float *mono, size_t n)
  * 0030: one chunk of the source, mono at 24-bit scale, to the headset's
  * own headphones if MON is on. Never blocks: either output drops a block
  * it has no room for rather than hold the capture up.
+ *
+ * 0034: a USB source is passed through instead -- `frames`, the
+ * microphone's own channels at its own width as uac_mic_read() gave
+ * them, rather than `mono`, which is the analysis's fold of them. A
+ * stereo microphone is heard in stereo and a 24-bit one at 16 bits (the
+ * width uac_write() takes) rounded, not by way of the float mono path.
+ * NULL for the ES7210 sources, which are monitored as before.
  */
-static void monitor(int src, const float *mono, size_t n)
+static void monitor(int src, const float *mono, const int32_t *frames, size_t n)
 {
     const bool want = s_mon_want && mon_possible(src);
     if (!want || src != SRC_USB) {
         if (s_mon_usb_on) { uac_stream_stop(); s_mon_usb_on = false; }
     }
     if (!want || !n) return;
-    for (size_t i = 0; i < n; i++) {
-        float v = mono[i] / 256.0f;
-        if (v > 32767.0f) v = 32767.0f;
-        if (v < -32768.0f) v = -32768.0f;
-        s_mon_buf[2 * i] = s_mon_buf[2 * i + 1] = (int16_t)v;
+    if (src == SRC_USB && frames) {
+        spectrum_passthrough(frames, n, s_usb_channels == 2 ? 2 : 1, s_usb_bits, s_mon_buf);
+    } else {
+        for (size_t i = 0; i < n; i++) {
+            float v = mono[i] / 256.0f;
+            if (v > 32767.0f) v = 32767.0f;
+            if (v < -32768.0f) v = -32768.0f;
+            s_mon_buf[2 * i] = s_mon_buf[2 * i + 1] = (int16_t)v;
+        }
     }
     if (src == SRC_JACK) {
         audio_out_monitor_write(s_mon_buf, n);
@@ -767,7 +778,7 @@ static void capture_task(void *arg)
                                         : (float)s_frames[i];
                 s_chunk[i] = s_usb_bits == 24 ? v : v * 256.0f;
             }
-            if (n) { feed(s_chunk, n); monitor(cur, s_chunk, n); }    /* 0030 */
+            if (n) { feed(s_chunk, n); monitor(cur, s_chunk, s_frames, n); }   /* 0030, 0034 */
             else   vTaskDelay(pdMS_TO_TICKS(2));
             continue;
         }
@@ -783,7 +794,7 @@ static void capture_task(void *arg)
                 s_chunk[i] = ((float)s_frames[2 * i] + (float)s_frames[2 * i + 1]) * 0.5f;
             }
         }
-        if (n) { feed(s_chunk, n); monitor(cur, s_chunk, n); }        /* 0030 */
+        if (n) { feed(s_chunk, n); monitor(cur, s_chunk, NULL, n); }       /* 0030 */
         else   vTaskDelay(pdMS_TO_TICKS(2));
     }
 }

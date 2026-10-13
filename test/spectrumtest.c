@@ -508,6 +508,39 @@ static void test_octaves(void)
     CHECK(fabsf(a - b) < 1e-4f, "Slow depends on frame rate");
 }
 
+/* 0034: a USB microphone's samples to 16-bit stereo for a USB output. */
+static void test_passthrough(void)
+{
+    /* 16-bit values pass unchanged, both rails included. */
+    CHECK(spectrum_pcm16(0, 16) == 0, "16-bit 0");
+    CHECK(spectrum_pcm16(32767, 16) == 32767, "16-bit +rail");
+    CHECK(spectrum_pcm16(-32768, 16) == -32768, "16-bit -rail");
+    CHECK(spectrum_pcm16(-1234, 16) == -1234, "16-bit value");
+    /* 24-bit: one 16-bit step is 256, rounded half away from zero. */
+    CHECK(spectrum_pcm16(256, 24) == 1, "24-bit one step");
+    CHECK(spectrum_pcm16(127, 24) == 0, "24-bit just under half");
+    CHECK(spectrum_pcm16(128, 24) == 1, "24-bit half rounds up");
+    CHECK(spectrum_pcm16(-128, 24) == -1, "24-bit -half rounds away");
+    CHECK(spectrum_pcm16(-127, 24) == 0, "24-bit just over -half");
+    CHECK(spectrum_pcm16(8388607, 24) == 32767, "24-bit +full scale held, read %d",
+          spectrum_pcm16(8388607, 24));
+    CHECK(spectrum_pcm16(-8388608, 24) == -32768, "24-bit -full scale");
+    /* Symmetric: v and -v land on opposite values. */
+    for (int32_t v = -70000; v <= 70000; v += 37)
+        CHECK(spectrum_pcm16(v, 24) == -spectrum_pcm16(-v, 24), "24-bit asymmetric at %d", (int)v);
+
+    /* Stereo keeps left and right; mono is copied to both. */
+    const int32_t st[6] = { 100, -200, 300, -400, 32767, -32768 };
+    int16_t out[6];
+    spectrum_passthrough(st, 3, 2, 16, out);
+    for (int i = 0; i < 6; i++) CHECK(out[i] == st[i], "stereo slot %d read %d", i, out[i]);
+    const int32_t mo[3] = { 256 * 5, -256 * 7, 8388607 };
+    spectrum_passthrough(mo, 3, 1, 24, out);
+    CHECK(out[0] == 5 && out[1] == 5, "mono 24-bit frame 0 %d/%d", out[0], out[1]);
+    CHECK(out[2] == -7 && out[3] == -7, "mono 24-bit frame 1 %d/%d", out[2], out[3]);
+    CHECK(out[4] == 32767 && out[5] == 32767, "mono 24-bit full scale %d/%d", out[4], out[5]);
+}
+
 int main(void)
 {
     test_rates();
@@ -523,6 +556,7 @@ int main(void)
     test_waterfall();
     test_octaves();
     test_axes();
+    test_passthrough();
     printf("spectrumtest: %d checks, %d failures\n", checks, failures);
     return failures ? 1 : 0;
 }

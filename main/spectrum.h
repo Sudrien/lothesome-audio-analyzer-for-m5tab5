@@ -18,6 +18,7 @@
 
 #include <math.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -626,6 +627,41 @@ static inline float spectrum_oct_frac(float ms)
 static inline void spectrum_oct_weight(float *e, float ms, float dt, double tau)
 {
     *e += (ms - *e) * (float)(1.0 - exp(-(double)dt / tau));
+}
+
+/*
+ * 0034: one USB microphone sample, of the width uac_mic_read() handed
+ * back (16, or 24 sign-extended in int32), as the 16-bit PCM a USB
+ * output takes. A 16-bit value passes unchanged; a 24-bit one is
+ * rounded to the nearest 16-bit step (half away from zero) and held to
+ * the int16 range, so the top of a 24-bit full scale does not wrap.
+ */
+static inline int16_t spectrum_pcm16(int32_t v, unsigned bits)
+{
+    if (bits == 24) {
+        v = v >= 0 ? (v + 128) / 256 : -((-v + 128) / 256);
+    }
+    if (v > 32767) v = 32767;
+    if (v < -32768) v = -32768;
+    return (int16_t)v;
+}
+
+/*
+ * 0034: n frames of a USB microphone's own channels -- one or two, at
+ * its own width -- to interleaved 16-bit stereo for a USB output. A
+ * stereo microphone keeps its left and right; a mono one is the same
+ * sample on both sides. Nothing is mixed, folded or re-levelled: what
+ * the microphone sent, at the output's width.
+ */
+static inline void spectrum_passthrough(const int32_t *frames, size_t n,
+                                        unsigned ch, unsigned bits, int16_t *stereo)
+{
+    for (size_t i = 0; i < n; i++) {
+        const int16_t l = spectrum_pcm16(frames[ch == 2 ? 2 * i : i], bits);
+        const int16_t r = ch == 2 ? spectrum_pcm16(frames[2 * i + 1], bits) : l;
+        stereo[2 * i] = l;
+        stereo[2 * i + 1] = r;
+    }
 }
 
 #ifdef __cplusplus
