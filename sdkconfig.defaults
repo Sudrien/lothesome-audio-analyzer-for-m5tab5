@@ -26,3 +26,10 @@ CONFIG_FREERTOS_HZ=1000
 # The Ark12 font table is large; the default 1 MB app partition is not.
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# 0027: usb_host_uac keeps only the first UAC_FREQ_NUM_MAX sample rates
+# of each alternate setting (default 4) and warns "Frequency Number 5
+# exceed the maximum 4". The Blue Snowball lists 8000, 11025, 22050,
+# 44100 and 48000 -- the fifth is the rate uac.c asks for first, so it
+# was dropped and the Snowball ran at 44.1 kHz. 8 leaves room.
+CONFIG_UAC_FREQ_NUM_MAX=8

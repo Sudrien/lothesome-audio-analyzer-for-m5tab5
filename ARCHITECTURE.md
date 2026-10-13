@@ -614,3 +614,14 @@ size, and that is the memory the I2S and USB DMA buffers come from. It
 is allocated from PSRAM on first use now, like the other large
 buffers. CLAUDE.md's rule keeps big buffers off task stacks; this is the
 other half -- off internal RAM, when they are this big and not DMA's.
+
+### 0027 -- the Snowball at 48 kHz
+
+The board's log had, for each of the Snowball's alternate settings,
+`uac-host: ... Frequency Number 5 exceed the maximum 4`. Its descriptor
+(`lsusb -v -d 074d:0005`) lists 8000, 11025, 22050, 44100 and 48000 Hz;
+usb_host_uac keeps the first `CONFIG_UAC_FREQ_NUM_MAX` (default 4), so
+48 kHz -- what feckless-drivers' uac.c asks for first -- was never
+offered, and the microphone ran at 44.1. `sdkconfig.defaults` sets it to
+8. It needs `rm sdkconfig` before the next build, as every change to
+the defaults does.
