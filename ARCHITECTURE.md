@@ -549,3 +549,21 @@ the cache: that is for the board.
 
 `main/CMakeLists.txt` requires `esp_driver_ppa` and `esp_mm`; both are
 IDF's own, so `dependencies.lock` does not move.
+
+### 0023 -- one PPA copy, and where its time goes
+
+On the board 0022's PPA ring ran -- `waterfall: PPA ring` -- and drew
+correctly, but `fall` was 19.9 ms against the memmove's 10.7 for the
+same source: slower. Each frame made two copies, and each copy has the
+driver write back its input and invalidate its output's whole panel
+rows, on top of 0022's own write-back: some 6 MB of cache-maintenance
+range a frame, beside the copy itself.
+
+The ring is mirrored now: rows of 2 * s_wf_h, each new pixel written
+at pos and pos + h, so the newest-first window [pos, pos + h) is always
+one block and one call. That halves the driver's cache work and costs
+1.1 MB more PSRAM. test/render still matches the memmove to the pixel.
+
+`fall` in the log now carries `[wb .. ppa ..]`: the shadow write-back
+before the copy, and the copy call with the driver's own cache work.
+Which of the two dominates decides what comes next.

@@ -233,6 +233,18 @@ static ppa_client_handle_t s_ppa;
 static uint16_t *s_wf_ring;
 static int       s_wf_pos;
 static bool      s_wf_ppa_failed;
+
+/*
+ * 0023: the ring is mirrored -- each row 2 * s_wf_h wide, every new pixel
+ * written at pos and pos + h -- so the newest-first window [pos, pos+h)
+ * is always one block, one PPA call, and the driver's write-back of the
+ * input and invalidate of the output happen once a frame, not twice. On
+ * the board 0022's two copies made `fall` 19.9 ms, slower than the
+ * memmove it replaced (10.7). The log splits it now: wb is the shadow
+ * write-back here, ppa the copy call with the driver's own cache work.
+ */
+#define WF_RING_W           (2 * s_wf_h)
+static int64_t s_t_wb, s_t_ppa;          /* this frame's, us */
 static uint16_t s_heat[256];               /* spectrum_heat_rgb(), as 565 */
 
 /* 0016: the 1/3-octave view. Its bands reuse s_level/s_peak/s_prev_*
@@ -845,7 +857,7 @@ static void waterfall_ring_reset(void)
 {
     s_wf_pos = 0;
     if (!s_ppa || s_wf_ppa_failed) return;
-    const size_t n = (size_t)LAND_W * (size_t)s_wf_h;
+    const size_t n = (size_t)LAND_W * (size_t)WF_RING_W;   /* 0023: mirrored */
     if (!s_wf_ring) {
         s_wf_ring = heap_caps_calloc(n, sizeof(uint16_t), MALLOC_CAP_SPIRAM);
         if (!s_wf_ring) ESP_LOGW(TAG, "waterfall: no room for the ring; scrolling by memmove");
@@ -860,7 +872,7 @@ static esp_err_t waterfall_copy(int rx, int w, int ox, int rows, int py0)
 {
     const ppa_srm_oper_config_t op = {
         .in = {
-            .buffer = s_wf_ring, .pic_w = (uint32_t)s_wf_h, .pic_h = (uint32_t)LAND_W,
+            .buffer = s_wf_ring, .pic_w = (uint32_t)WF_RING_W, .pic_h = (uint32_t)LAND_W,
             .block_w = (uint32_t)w, .block_h = (uint32_t)rows,
             .block_offset_x = (uint32_t)rx, .block_offset_y = 0,
             .srm_cm = PPA_SRM_COLOR_MODE_RGB565,
@@ -888,9 +900,10 @@ static bool waterfall_push_ring(int n)
     if (rows <= 0) return true;
     for (int i = 0; i < n; i++) {
         s_wf_pos = (s_wf_pos + s_wf_h - 1) % s_wf_h;
-        for (int b = s_first_col; b < s_graph_w; b++)
-            s_wf_ring[(size_t)(s_graph_w - 1 - b) * (size_t)s_wf_h + (size_t)s_wf_pos] =
-                s_heat[(int)(s_wf_frac[b] * 255.0f + 0.5f)];
+        for (int b = s_first_col; b < s_graph_w; b++) {
+            uint16_t *row = s_wf_ring + (size_t)(s_graph_w - 1 - b) * (size_t)WF_RING_W;
+            row[s_wf_pos] = row[s_wf_pos + s_wf_h] = s_heat[(int)(s_wf_frac[b] * 255.0f + 0.5f)];
+        }
     }
 
     /* The panel rows the copy lands in, plus one either side: written
@@ -900,12 +913,14 @@ static bool waterfall_push_ring(int n)
     int wb0 = py0 - 1, wb1 = py0 + rows + 1;
     if (wb0 < 0) wb0 = 0;
     if (wb1 > gfx_h()) wb1 = gfx_h();
+    const int64_t t0 = esp_timer_get_time();
     esp_cache_msync(gfx_fb() + (size_t)wb0 * (size_t)stride,
                     (size_t)(wb1 - wb0) * (size_t)stride * sizeof(uint16_t),
                     ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
-
-    esp_err_t err = waterfall_copy(s_wf_pos, s_wf_h - s_wf_pos, 0, rows, py0);
-    if (err == ESP_OK && s_wf_pos > 0) err = waterfall_copy(0, s_wf_pos, s_wf_h - s_wf_pos, rows, py0);
+    const int64_t t1 = esp_timer_get_time();
+    const esp_err_t err = waterfall_copy(s_wf_pos, s_wf_h, 0, rows, py0);   /* 0023: one block */
+    s_t_wb  += t1 - t0;
+    s_t_ppa += esp_timer_get_time() - t1;
     if (err != ESP_OK) {
         /* Once, then memmove for good: the screen's waterfall is
          * whatever the last good copy left, and scrolls on from there. */
@@ -1173,10 +1188,12 @@ void app_main(void)
             /* 0021: draw in parts -- the bars, the waterfall's scroll and
              * the blit -- to say which of them FALL's extra 17 ms is. */
             ESP_LOGI(TAG, "FPS: %.1f | capture %.1fms  fft %.1fms  draw %.1fms "
-                     "(bars %.1f  fall %.1f  blit %.1f)",
+                     "(bars %.1f  fall %.1f [wb %.1f ppa %.1f]  blit %.1f)",
                      fps, t_capture / 1000.0f / frames, t_fft / 1000.0f / frames,
                      t_draw / 1000.0f / frames, t_bars / 1000.0f / frames,
-                     t_fall / 1000.0f / frames, t_blit / 1000.0f / frames);
+                     t_fall / 1000.0f / frames, s_t_wb / 1000.0f / frames,
+                     s_t_ppa / 1000.0f / frames, t_blit / 1000.0f / frames);
+            s_t_wb = s_t_ppa = 0;               /* 0023 */
             draw_fps(fps);
             frames = 0;
             report_us = t3;
