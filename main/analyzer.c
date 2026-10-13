@@ -199,6 +199,19 @@ static view_mode_t s_mode = MODE_SPECTRUM;      /* 0015 */
 static int    s_wf_top, s_wf_h;
 static float  s_wf_frac[LAND_W];           /* this frame's level per column, unsmoothed */
 static float  s_wf_acc;
+
+/*
+ * 0025: the scroll in batches. On the board the memmove costs 16 ms
+ * whether it moves the picture one row or many, so rows owed are held
+ * here, each with its own frame's colours, and the picture moves once
+ * per WF_BATCH of them: a quarter of the memmoves for the same rows.
+ * The newest row is up to WF_BATCH - 1 frames late reaching the screen,
+ * and the picture steps WF_BATCH px at a time, about ten times a second.
+ */
+#define WF_BATCH            (4)
+#define WF_QUEUE            (16)     /* a slow frame can owe more than a batch */
+static uint16_t s_wf_q[WF_QUEUE][LAND_W];  /* oldest first, by column b */
+static int      s_wf_qn;
 static uint16_t s_heat[256];               /* spectrum_heat_rgb(), as 565 */
 
 /* 0016: the 1/3-octave view. Its bands reuse s_level/s_peak/s_prev_*
@@ -327,6 +340,7 @@ static void set_geometry(void)
     if (s_graph_h > MAX_GRAPH_H) s_graph_h = MAX_GRAPH_H;
     s_bottom = s_top + s_graph_h;
     s_wf_acc = 0.0f;
+    s_wf_qn = 0;                /* 0025 */
 }
 
 /* 0015: the two mode buttons, top right; the chosen one lit. */
@@ -786,17 +800,25 @@ static void render(float dt, int *x0, int *x1)
 static void waterfall_push(int n, int *x0, int *x1)
 {
     if (n <= 0 || s_mode != MODE_WATERFALL) return;
-    if (n > s_wf_h) n = s_wf_h;
+    /* 0025: queue the owed rows, each with this frame's colours. */
+    for (int i = 0; i < n && s_wf_qn < WF_QUEUE; i++, s_wf_qn++)
+        for (int b = s_first_col; b < s_graph_w; b++)
+            s_wf_q[s_wf_qn][b] = s_heat[(int)(s_wf_frac[b] * 255.0f + 0.5f)];
+    if (s_wf_qn < WF_BATCH) return;
+
+    /* Move the picture down by the whole batch, newest row at the top. */
+    int k = s_wf_qn;
+    if (k > s_wf_h) k = s_wf_h;
     uint16_t *fb = gfx_fb();
     const int stride = gfx_w();
     for (int b = s_first_col; b < s_graph_w; b++) {
         const int lx = s_left + b;
         uint16_t *row = fb + (size_t)landmap_py(lx, 0, LAND_W) * (size_t)stride +
                         landmap_px(lx, s_wf_top, LAND_W);
-        if (n < s_wf_h) memmove(row + n, row, (size_t)(s_wf_h - n) * sizeof(uint16_t));
-        const uint16_t c = s_heat[(int)(s_wf_frac[b] * 255.0f + 0.5f)];
-        for (int i = 0; i < n; i++) row[i] = c;
+        if (k < s_wf_h) memmove(row + k, row, (size_t)(s_wf_h - k) * sizeof(uint16_t));
+        for (int i = 0; i < k; i++) row[i] = s_wf_q[s_wf_qn - 1 - i][b];
     }
+    s_wf_qn = 0;
     const int l = s_left + s_first_col, r = s_left + s_graph_w;
     if (*x1 <= *x0) { *x0 = l; *x1 = r; return; }
     if (l < *x0) *x0 = l;

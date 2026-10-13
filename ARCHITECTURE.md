@@ -586,3 +586,17 @@ This reverts 0022 and 0023 in the code, back to 0015's memmove, and
 keeps their entries here as the record of why. 0021's split timing
 stays. feckless-graphics-handler's 128-byte aligned shadow is harmless
 and stays wherever it was applied.
+
+### 0025 -- the waterfall's scroll in batches of four
+
+The memmove costs 16 ms (USB) whether it moves the picture one row or
+four: it is the size of the picture that costs, not the distance. So the
+rows a frame owes (`spectrum_wf_rows()`, still 40 a second by the clock)
+are queued, each with its own frame's colours, and the picture moves
+once per four of them, by four, newest at the top. A quarter of the
+memmoves for the same rows: no row is dropped or repeated, the time
+labels stay true, and the newest row reaches the screen up to three
+frames late. The picture steps 4 px at a time, about ten times a second.
+
+The queue holds 16 rows, which a frame clamped at 0.25 s (10 rows)
+cannot overrun. It is emptied on every layout, with the row clock.
