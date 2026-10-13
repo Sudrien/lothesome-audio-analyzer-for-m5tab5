@@ -567,3 +567,22 @@ one block and one call. That halves the driver's cache work and costs
 `fall` in the log now carries `[wb .. ppa ..]`: the shadow write-back
 before the copy, and the copy call with the driver's own cache work.
 Which of the two dominates decides what comes next.
+
+### 0024 -- the PPA ring, taken out
+
+0023 on the board, FALL with a USB microphone: `fall` 33.6 ms, of it
+`ppa` 26.4 and `wb` 0.0; 15 fps, against the memmove's 16.2 ms and
+22 fps. And `lcd.dsi: can't fetch data from external memory fast
+enough, underrun happens`: while the PPA copies, the panel's own scan
+out of PSRAM misses its deadline.
+
+So the write-back 0022 was careful about cost nothing and drew right,
+and the scale-rotate-mirror engine is simply slow at a plain copy --
+about 35 MB/s against the CPU's 115 -- and takes PSRAM bandwidth the
+DPI scan-out needs. The ring's own writes were dear too, some 7 ms: a
+pixel per column is a cache line per column, fetched to be written.
+
+This reverts 0022 and 0023 in the code, back to 0015's memmove, and
+keeps their entries here as the record of why. 0021's split timing
+stays. feckless-graphics-handler's 128-byte aligned shadow is harmless
+and stays wherever it was applied.

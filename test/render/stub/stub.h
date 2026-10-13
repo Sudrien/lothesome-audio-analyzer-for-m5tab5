@@ -80,7 +80,7 @@ static inline void dsps_fft2r_fc32(float *x, int n)
 #define GFX_ROT_0   0
 #define GFX_ROT_270 3
 typedef void *esp_lcd_panel_handle_t;
-extern uint16_t stub_fb[LCD_H_RES * LCD_V_RES];   /* 128-byte aligned, in render.c */
+extern uint16_t stub_fb[LCD_H_RES * LCD_V_RES];
 static inline uint16_t *gfx_fb(void) { return stub_fb; }
 static inline int gfx_w(void) { return LCD_H_RES; }
 static inline int gfx_h(void) { return LCD_V_RES; }
@@ -125,61 +125,3 @@ static inline esp_err_t touch_init(i2c_master_bus_handle_t b, int w, int h) { (v
 static inline bool touch_get(int *x, int *y) { (void)x; (void)y; return false; }
 static inline bool touch_present(void) { return false; }
 static inline void touch_set_rotation(int q) { (void)q; }
-
-/* ---- 0022: heap, cache and the PPA ----
- * The PPA here is software: a block copy with the hardware's picture
- * and offset rules, so the ring's unrolling is checked on a PC. The
- * cache calls are no-ops; there is no cache. */
-#include <stdlib.h>
-#define MALLOC_CAP_SPIRAM   (1u << 10)
-#define MALLOC_CAP_8BIT     (1u << 2)
-static inline void *heap_caps_calloc(size_t n, size_t sz, uint32_t caps) { (void)caps; return calloc(n, sz); }
-
-#define ESP_CACHE_MSYNC_FLAG_DIR_C2M    (1u << 0)
-#define ESP_CACHE_MSYNC_FLAG_DIR_M2C    (1u << 1)
-#define ESP_CACHE_MSYNC_FLAG_UNALIGNED  (1u << 2)
-static inline esp_err_t esp_cache_msync(void *p, size_t n, int flags) { (void)p; (void)n; (void)flags; return ESP_OK; }
-
-typedef enum { PPA_OPERATION_SRM } ppa_operation_t;
-typedef enum { PPA_SRM_COLOR_MODE_RGB565 } ppa_srm_color_mode_t;
-typedef enum { PPA_SRM_ROTATION_ANGLE_0 } ppa_srm_rotation_angle_t;
-typedef enum { PPA_TRANS_MODE_BLOCKING } ppa_trans_mode_t;
-typedef struct { ppa_operation_t oper_type; uint32_t max_pending_trans_num; } ppa_client_config_t;
-typedef struct ppa_client *ppa_client_handle_t;
-typedef struct {
-    const void *buffer; uint32_t pic_w, pic_h, block_w, block_h, block_offset_x, block_offset_y;
-    ppa_srm_color_mode_t srm_cm;
-} ppa_in_pic_blk_config_t;
-typedef struct {
-    void *buffer; uint32_t buffer_size, pic_w, pic_h, block_offset_x, block_offset_y;
-    ppa_srm_color_mode_t srm_cm;
-} ppa_out_pic_blk_config_t;
-typedef struct {
-    ppa_in_pic_blk_config_t in; ppa_out_pic_blk_config_t out;
-    ppa_srm_rotation_angle_t rotation_angle; float scale_x, scale_y; ppa_trans_mode_t mode;
-} ppa_srm_oper_config_t;
-
-static inline esp_err_t ppa_register_client(const ppa_client_config_t *c, ppa_client_handle_t *h)
-{
-    (void)c; *h = (ppa_client_handle_t)(uintptr_t)1; return ESP_OK;
-}
-static inline esp_err_t ppa_do_scale_rotate_mirror(ppa_client_handle_t h, const ppa_srm_oper_config_t *o)
-{
-    (void)h;
-    const ppa_in_pic_blk_config_t *i = &o->in;
-    const ppa_out_pic_blk_config_t *u = &o->out;
-    /* The driver's own checks: block in the input picture, block in the
-     * output picture, output buffer and size cache-aligned, size fits. */
-    if (i->block_w == 0 || i->block_h == 0) return ESP_FAIL;
-    if (i->block_offset_x + i->block_w > i->pic_w || i->block_offset_y + i->block_h > i->pic_h) return ESP_FAIL;
-    if (u->block_offset_x + i->block_w > u->pic_w || u->block_offset_y + i->block_h > u->pic_h) return ESP_FAIL;
-    if ((uintptr_t)u->buffer % 128 || u->buffer_size % 128) return ESP_FAIL;
-    if ((size_t)u->pic_w * u->pic_h * 2 > u->buffer_size) return ESP_FAIL;
-    const uint16_t *src = i->buffer;
-    uint16_t *dst = u->buffer;
-    for (uint32_t y = 0; y < i->block_h; y++)
-        memcpy(&dst[(size_t)(u->block_offset_y + y) * u->pic_w + u->block_offset_x],
-               &src[(size_t)(i->block_offset_y + y) * i->pic_w + i->block_offset_x],
-               i->block_w * sizeof(uint16_t));
-    return ESP_OK;
-}
