@@ -106,7 +106,7 @@ dependencies:
     - linux
     version: 1.5.0
   feckless_drivers:
-    component_hash: 33529546e6b50347d09f0952429b099df8f92eafa0f1dc2d7407133469574bce
+    component_hash: 65d8b225d22f77231fee85d171914befab9bc13e6e0b876e12321db48f4eb964
     dependencies:
     - name: idf
       version: '>=5.4.2'
@@ -118,7 +118,7 @@ dependencies:
       git: https://github.com/Sudrien/feckless-drivers-for-m5tab5.git
       path: .
       type: git
-    version: e322b0297620d03881032a8bf57bf924c6943790
+    version: b56e1f092bf4b37ca5de72bbde1c45453c71e174
   feckless_graphics_handler:
     component_hash: 885597639f75450ea8e34c9b1c31b3222fb83d029bc30136eaa3723ba6795366
     dependencies:
@@ -141,6 +141,6 @@ direct_dependencies:
 - feckless_drivers
 - feckless_graphics_handler
 - idf
-manifest_hash: 1c19282c6ec16af9c3a8849b8c934074e1c6e83b84c20c397676275596594327
+manifest_hash: e5c1df2c0fee827a92234cf4f6db8ce49e837b0f5c54a457cbf01fbdd8368151
 target: esp32p4
 version: 2.0.0
