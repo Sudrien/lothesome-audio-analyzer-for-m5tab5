@@ -687,3 +687,14 @@ Latency is the outputs' buffering, a few tens of milliseconds.
 re-clocked TX "would reach the DAC as noise"; it was written about the
 duplex pair 5209 replaced. If the jack's monitoring is noise, that note
 still holds and the TX needs 32-bit samples for it.
+
+### 0031 -- room for a USB headset's output
+
+0030's USB monitoring was refused on the board: `HCD DWC: EP MPS (768)
+exceeds supported limit (512)`. The adapter's output endpoints are 768
+bytes at 16 bits and 576 at 24, sized for its 96 kHz modes, and IDF's
+default FIFO split on the P4's high-speed core (hcd_dwc.c,
+`_calculate_fifo_from_bias()`, 1024-line depth) gives periodic TX 128
+lines, 512 bytes. `CONFIG_USB_HOST_HW_BUFFER_BIAS_PERIODIC_OUT` gives RX
+130 lines (520 bytes: the Snowball's IN endpoint is 192, the adapter's
+288), control and bulk 64, and periodic TX the rest. Needs `rm sdkconfig`.

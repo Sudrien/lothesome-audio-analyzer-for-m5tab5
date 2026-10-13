@@ -40,3 +40,12 @@ CONFIG_UAC_FREQ_NUM_MAX=8
 # and failed enumeration with "Configuration descriptor larger than
 # control transfer max length". 1024 is one buffer per attached device.
 CONFIG_USB_HOST_CONTROL_TRANSFER_MAX_SIZE=1024
+
+# 0031: the USB host's FIFO split. Balanced (the default) gives the
+# periodic TX FIFO 128 lines, 512 bytes, on the P4's high-speed core, and
+# the headset adapter's output endpoints are 768 (16-bit) and 576
+# (24-bit) bytes: "EP MPS (768) exceeds supported limit (512)", and no
+# monitoring to USB. Periodic OUT leaves RX 130 lines (520 bytes; the
+# largest microphone endpoint here is 288) and control 64, and gives
+# periodic TX the rest.
+CONFIG_USB_HOST_HW_BUFFER_BIAS_PERIODIC_OUT=y
