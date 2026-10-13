@@ -84,7 +84,7 @@ static const char *TAG = "analyzer";
 #define COL_BASE            ((uint16_t)0x7BEF)
 #define COL_LABEL           ((uint16_t)0xD69A)
 #define COL_DEAF            RGB(28, 28, 28)  /* 0013: below the source's floor */
-#define DEAF_DBFS           (-80.0f)         /* 0020: the outline's top */
+#define DEAF_LINE_H         (3)              /* 0033: the red line at -90, px */
 #define COL_CLIP            RGB(255, 40, 40) /* 0014 */
 
 /*
@@ -277,15 +277,6 @@ static void land_fill(int x, int y, int w, int h, uint16_t c)
 {
     const landmap_rect_t r = landmap_rect(x, y, w, h, LAND_W);
     gfx_fill_rect(r.x, r.y, r.w, r.h, c);
-}
-
-/* 0020: a one-pixel rectangle's edges, landscape coordinates. */
-static void land_outline(int x, int y, int w, int h, uint16_t c)
-{
-    land_fill(x, y, w, 1, c);
-    land_fill(x, y + h - 1, w, 1, c);
-    land_fill(x, y, 1, h, c);
-    land_fill(x + w - 1, y, 1, h, c);
 }
 
 /* A horizontal landscape run is a panel column; one pixel wide. */
@@ -554,7 +545,8 @@ static const char *const k_source_name[SRC_COUNT] = {
  * reader that sees the new source sees them too.
  */
 static volatile uint32_t s_rate = SPECTRUM_SAMPLE_RATE;
-static char s_usb_label[48];
+static char s_usb_label[48];       /* the product name */
+static char s_usb_suffix[32];      /* 0033: ", 44 kHz, 98 dB": kept whole on screen */
 static uint8_t s_usb_channels;
 static uint8_t s_usb_bits = 16;       /* 0028: the width uac_mic_read() hands back */
 static uint32_t s_usb_refused_gen = UINT32_MAX;   /* uac_generation() at a refusal */
@@ -733,12 +725,17 @@ static void capture_task(void *arg)
                         product[--len] = '\0';
                     /* 0028: the width on screen when it is 24, so a device
                      * offering both can be told apart at a glance. */
-                    const char *w = bits == 24 ? ", 24-bit" : "";
+                    /* 0033: the dynamic range the format allows, 6.02 dB a
+                     * bit plus 1.76 -- 98 dB at 16 bits, 146 at 24. The
+                     * format's ceiling, not the microphone's own range,
+                     * which USB does not say. */
+                    const unsigned dr = (unsigned)(6.02f * (float)bits + 1.76f + 0.5f);
+                    snprintf(s_usb_label, sizeof(s_usb_label), "USB %.40s", product);
                     if (rate == SPECTRUM_SAMPLE_RATE)
-                        snprintf(s_usb_label, sizeof(s_usb_label), "USB %.24s%s", product, w);
+                        snprintf(s_usb_suffix, sizeof(s_usb_suffix), ", %u dB", dr);
                     else
-                        snprintf(s_usb_label, sizeof(s_usb_label), "USB %.18s, %u kHz%s",
-                                 product, (unsigned)(rate / 1000), w);
+                        snprintf(s_usb_suffix, sizeof(s_usb_suffix), ", %u kHz, %u dB",
+                                 (unsigned)(rate / 1000), dr);
                     s_rate = rate;
                     next = SRC_USB;
                     ESP_LOGI(TAG, "source: USB microphone \"%s\", %u Hz, %u ch, %u-bit",
@@ -955,7 +952,20 @@ static void draw_source(int src)
 {
     const int x = 560, y = 14, h = ARK12_H * LABEL_SCALE, x_end = MODE_X - 14;   /* 0015 */
     land_fill(x, y, x_end - x, h, COL_BLACK);
-    land_text(x, y, src == SRC_USB ? s_usb_label : k_source_name[src], LABEL_SCALE, COL_LABEL);
+    if (src != SRC_USB) {
+        land_text(x, y, k_source_name[src], LABEL_SCALE, COL_LABEL);
+    } else {
+        /* 0033: the suffix whole, the product name cut until it fits --
+         * by width, not characters, so no name runs into the buttons. */
+        char buf[sizeof(s_usb_label) + sizeof(s_usb_suffix)];
+        size_t keep = strlen(s_usb_label);
+        for (;;) {
+            snprintf(buf, sizeof(buf), "%.*s%s", (int)keep, s_usb_label, s_usb_suffix);
+            if (keep <= 4 || land_text_w(buf, LABEL_SCALE) <= x_end - x) break;
+            keep--;
+        }
+        land_text(x, y, buf, LABEL_SCALE, COL_LABEL);
+    }
     land_blit(x, x_end);
 }
 
@@ -999,29 +1009,24 @@ static void layout_for(uint32_t rate, int src)
     }
     draw_static();
 
-    /* 0020: what a source cannot hear is an empty outline from the floor
-     * to -80 dBFS -- a bar with nothing in it, not a grey block that
-     * reads as a fault. A band each in the 1/3-octave view; one box over
-     * the span of columns in the others. The waterfall under it keeps
-     * its dark fill: it has no level for a box to stand on. */
-    const int deaf_y = s_bottom - (int)(spectrum_frac(DEAF_DBFS) * (float)s_graph_h);
+    /* 0020 drew what a source cannot hear as an empty outline up to -80
+     * dBFS. 0033: a red line at -90 instead, along the floor of the span
+     * the source is deaf to -- nothing above it to read, and a colour
+     * that says "not this" rather than a bar that says "quiet". A band
+     * each in the 1/3-octave view; one line over the columns in the
+     * others. The waterfall under them keeps its dark fill. */
+    int deaf_w = 0;
     if (s_mode == MODE_OCT) {
-        int last_deaf = -1;
-        for (int b = 0; b < SPECTRUM_OCT_BANDS; b++) {
-            if (!s_oct_deaf[b]) continue;
-            land_outline(s_left + b * s_oct_slot + OCT_GAP / 2, deaf_y,
-                         s_oct_slot - OCT_GAP, s_bottom - deaf_y, COL_BASE);
-            last_deaf = b;
-        }
-        if (last_deaf >= 0) land_blit(s_left, s_left + (last_deaf + 1) * s_oct_slot);
-        return;
+        for (int b = 0; b < SPECTRUM_OCT_BANDS; b++)
+            if (s_oct_deaf[b]) deaf_w = (b + 1) * s_oct_slot;
+    } else {
+        deaf_w = s_first_col;
     }
-    if (s_first_col > 0) {
-        land_outline(s_left, deaf_y, s_first_col, s_bottom - deaf_y, COL_BASE);
-        if (s_mode == MODE_WATERFALL)       /* 0015 */
-            land_fill(s_left, s_wf_top, s_first_col, s_wf_h, COL_DEAF);
-        land_blit(s_left, s_left + s_first_col);
-    }
+    if (deaf_w <= 0) return;
+    land_fill(s_left, s_bottom - DEAF_LINE_H + 1, deaf_w, DEAF_LINE_H, COL_CLIP);
+    if (s_mode == MODE_WATERFALL)           /* 0015 */
+        land_fill(s_left, s_wf_top, deaf_w, s_wf_h, COL_DEAF);
+    land_blit(s_left, s_left + deaf_w);
 }
 
 /* 0014: the meter's line, under the title. dB re a full-scale sine,

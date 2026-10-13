@@ -121,8 +121,9 @@ static void run(view_mode_t mode, uint32_t rate, int src, const char *path)
     s_rng = 12345;
     s_rate = rate;
     spectrum_meter_init(&s_meter, (double)rate);
-    snprintf(s_usb_label, sizeof(s_usb_label), rate == SPECTRUM_SAMPLE_RATE
-             ? "USB Blue Snowball" : "USB Blue Snowball, %u kHz", (unsigned)(rate / 1000));
+    snprintf(s_usb_label, sizeof(s_usb_label), "USB Blue Snowball");
+    snprintf(s_usb_suffix, sizeof(s_usb_suffix), rate == SPECTRUM_SAMPLE_RATE
+             ? ", 98 dB" : ", %u kHz, 98 dB", (unsigned)(rate / 1000));
 
     s_mode = mode;
     layout_for(rate, src);

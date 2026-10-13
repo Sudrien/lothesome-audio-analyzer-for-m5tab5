@@ -725,3 +725,12 @@ five FFTs instead of two, about 1.5 ms more, and the capture task's
 filtering is some 4 M multiply-adds a second. No crossfade at the
 seams, by choice. What stays at each seam is physics: a slower stage
 sees further back, so a sweep's line jogs a little later at each.
+
+### 0033 — deaf line, USB dynamic range
+
+Below the built-in microphones' 80 Hz floor the spectrum no longer draws a grey
+bar pinned to -80 dBFS; it draws nothing, with a 3 px red line along -90 so the
+gap reads as "not measured" rather than "quiet". The waterfall still greys
+that strip. A USB source's label now ends in its theoretical dynamic range,
+6.02 x bits + 1.76 dB (98 dB at 16-bit, 146 dB at 24-bit), after the rate when
+it isn't 48 kHz; the product name is trimmed to fit before the mode buttons.
