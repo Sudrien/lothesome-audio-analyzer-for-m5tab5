@@ -29,21 +29,26 @@ the screen:
 The built-in microphones and the jack hear nothing below 80 Hz; that part
 of the axis is marked with a red line at -90 dBFS.
 
-**MON** sends the source to headphones on the jack or a USB headset, at a
-fixed volume. It is off at power-up. A USB microphone is passed straight
+**MON**, in the menu, sends the source to headphones on the jack or a USB
+headset, at a fixed volume. It is off at power-up; while it is on, MON
+shows beside the fps. A USB microphone is passed straight
 through to the USB output: its own channels, so a stereo one stays
 stereo, at 16 bits.
 
 ## Views
 
-Buttons top right:
+The gear, top right, opens the menu: the three views, **FAST/SLOW**,
+**MON** and **LICENCES**. Tap the gear again, or anywhere off the menu,
+to close it. The graph pauses while the menu is open; the meter keeps
+measuring.
 
 - **BARS** -- the spectrum, one bar per pixel column. Bass is finer but
   slower to respond: 2.9 Hz resolution over a third of a second at the
   bottom, 47 Hz over 21 ms at the top.
 - **1/3 OCT** -- the 31 standard bands, 20 Hz to 20 kHz. Pink noise reads
   flat. **FAST/SLOW** picks 125 ms or 1 s averaging; use Slow for pink
-  noise. A grey top band means the source's sample rate cuts it short.
+  noise. The one in use shows beside the fps. A grey top band means the
+  source's sample rate cuts it short.
 - **FALL** -- the last ten seconds as a waterfall, newest at the top.
 
 ## The meter
@@ -75,8 +80,12 @@ How it works: `ARCHITECTURE.md`.
 ## Development
 
 `make -C test` runs the host tests. `make -C test/render` draws each view
-to a `.ppm` on a PC; it needs one `idf.py build` first, for the font.
+to a `.ppm` on a PC, and the menu and the licences page; it needs one
+`idf.py build` first, for the font, and cmake.
 
 ## Licence
 
-MIT. See `LICENSE`.
+MIT. See `LICENSE`. The firmware also contains ESP-IDF, esp-dsp,
+Espressif's LCD, touch and USB components, the feckless libraries and the
+Ark Pixel font (OFL-1.1). **LICENCES** in the menu lists each, at the
+version the build used, with its licence.

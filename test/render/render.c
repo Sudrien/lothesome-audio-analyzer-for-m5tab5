@@ -148,6 +148,7 @@ static void run(view_mode_t mode, uint32_t rate, int src, const char *path)
     }
     draw_meters();
     draw_fps((float)FPS);
+    if (s_menu) draw_menu();        /* 0036: what a press on the gear draws */
     save(path);
 }
 
@@ -162,5 +163,16 @@ int main(void)
     run(MODE_SPECTRUM,  48000, SRC_BUILTIN, "bars-builtin.ppm");
     run(MODE_OCT,       48000, SRC_BUILTIN, "oct-builtin.ppm");
     run(MODE_WATERFALL, 48000, SRC_BUILTIN, "fall-builtin.ppm");
+    /* 0036: the menu over a view, as a press on the gear leaves it, and
+     * the licences page */
+    s_menu = true;
+    run(MODE_OCT,       48000, SRC_USB,     "menu-oct.ppm");
+    run(MODE_SPECTRUM,  48000, SRC_BUILTIN, "menu-bars.ppm");
+    s_menu = false;
+    s_lic = true;
+    s_lic_scroll = 0;
+    draw_licences();
+    save("licences.ppm");
+    s_lic = false;
     return 0;
 }

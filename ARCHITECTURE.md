@@ -797,3 +797,57 @@ a copy, tell a build of this repository from a file with the same name:
 Every run attests, a manual one without a release included. The job
 gains `id-token: write` and `attestations: write`. Releases before this
 have no attestation. Not yet run on CI.
+
+### 0036 -- the gear, its menu, and the licences page
+
+Asked for: a licences page, as defeatist's BUILD tab and the moving
+map's settings have, with the view switches behind a gear and the
+licences below them.
+
+**The gear.** Top right, where the three view buttons began (0015,
+0016), a 42 px square at their y; FAST/SLOW and MON, which sat under
+them (0016, 0030), are gone from the graph's screen too. Its press zone
+is 0021's: 30 px to its left and down to y 66, where fingers land. What
+is on still shows: in 1/3 OCT the weighting, FAST or SLOW, and MON while
+monitoring (white when it plays, dim when the source cannot be heard),
+as tags left of the fps. The source label may now run to the gear.
+
+**The menu** hangs under the gear, 360 px wide, four rows of 64 -- a
+fingertip, by 0021's measurements: BARS, 1/3 OCT and FALL, the chosen one
+lit; FAST and SLOW, dim outside the 1/3-octave view but still changed
+by a press, for when it is chosen; MON, which says "no headset" when the
+source cannot be monitored; LICENCES. A view change repaints under it
+and the menu stays, so FAST/SLOW can follow. The gear again, or a press
+anywhere off the panel, closes it.
+
+**The graph pauses while the menu or the page is open.** render() and
+waterfall_push() would draw over them every frame, and neither knows
+about anything on top. Capture, the stages, the FFT and the meter carry
+on -- an LAeq is not interrupted by opening a menu -- but the meter line
+and the fps are not drawn until it closes. Closing repaints the graph
+from the floor, as a change of view always has. A source change while
+either is open repaints and draws it again on top. Every press while
+either is open is theirs, so none counts toward the meter's
+hold-to-reset.
+
+**The licences page** is the whole screen: the title, the repository,
+and what libversions.h lists in three measured columns at 34 px a line,
+17 to a page, paged by UP and DOWN in the footer when there are more.
+Any press but UP or DOWN closes it, back to the graph; there is no
+outside to tap. `cmake/libversions.cmake` is unprofitable-mahjong's copy
+of defeatist's (5283, 5284), run after `project()`: this repository at
+its commit, every component in the lock with the licence read from its
+copy in managed_components/, ESP-IDF, and the Ark Pixel font through
+feckless-graphics-handler. Nothing is vendored or fetched at build time
+here, so that is the list: 12 entries from the current lock.
+
+**Geometry in menu.h**, header-only like landmap.h, so the hit tests run
+on the host: test/menutest.c, 42 checks, wired into `make -C test`.
+test/render draws two more pictures, the menu over 1/3 OCT and over
+BARS, and the licences page, after `cmake -P cmake/libversions.cmake`
+into its own libversions/; docs/mockup.png is its bars-builtin picture
+again, with the gear. analyzer.c compiled in test/render with -Wall
+-Wextra -Werror, and with the unused-function and unused-variable
+warnings back on, no new ones. In that run the components read "licence
+not found", as there is no managed_components/ without a build; a real
+build reads their copies. Not built with ESP-IDF, and not on the board.

@@ -49,6 +49,8 @@
 #include "ark12.h"        /* 0006: glyphs, drawn turned */
 
 #include "landmap.h"      /* 0006 */
+#include "menu.h"         /* 0036 */
+#include "libversions.h"  /* 0036: generated, cmake/libversions.cmake */
 #include "monoring.h"     /* 0003 */
 #include "spectrum.h"
 
@@ -106,39 +108,24 @@ static const char *TAG = "analyzer";
 #define WF_GAP              (8)
 #define KEY_W               (16)     /* the colour key, right of the graph */
 #define MODE_COUNT          (3)      /* 0016: BARS, 1/3 OCT, FALL */
-#define MODE_W              (112)    /* each button: "1/3 OCT" is 98 px of Ark12 */
-#define MODE_X              (LAND_W - 10 - MODE_COUNT * MODE_W)
-#define MODE_Y              (6)
-#define MODE_H              (36)
-
-/* 0016: the 1/3-octave view's Fast/Slow switch, under the mode buttons. */
-#define WEIGHT_X            (MODE_X)
-#define WEIGHT_Y            (74)
-#define WEIGHT_W            (MODE_W)
-#define WEIGHT_H            (26)
 
 /*
- * 0021: where a press counts, which is more than what is drawn. On the
- * board fingers landed 1 to 80 px BELOW the buttons they were aimed at,
- * and a 36 px strip caught few of them. Nothing else on the screen takes
- * a tap, so the zones reach down into the empty band above the graph
- * and, for FAST/SLOW, into the top of the graph itself, where a press
- * otherwise only counts toward the meter's hold-to-reset.
+ * 0036: the view buttons (0015, 0016), FAST/SLOW (0016) and MON (0030)
+ * are in the menu under the gear, top right, with LICENCES; menu.h has
+ * where, and where a press counts (0021's lesson, kept). What is on is
+ * still said on the graph's screen: MON and the weighting as tags left
+ * of the fps, the view by the view itself.
  */
-#define MODE_HIT_X0         (MODE_X - 10)
-#define MODE_HIT_Y1         (66)     /* MODE_Y + MODE_H is 42 */
-#define WEIGHT_HIT_Y0       (MODE_HIT_Y1)
-#define WEIGHT_HIT_Y1       (150)    /* WEIGHT_Y + WEIGHT_H is 100 */
+#define TAG_Y               (78)     /* draw_fps()'s line */
 
 /*
- * 0030: monitoring -- what a headset hears, back in its ears. MON, left
- * of FAST/SLOW and in every view, off at every boot. It plays only to a
+ * 0030: monitoring -- what a headset hears, back in its ears. MON, in
+ * the menu (0036) and in every view, off at every boot. It plays only to a
  * headset's own headphones: the jack's, through feckless-drivers'
  * audio_out_monitor_write(), or a USB headset's own output, never the
  * speaker and never for the built-in microphones, which the speaker
  * would feed back into. At a fixed level, MON_VOLUME.
  */
-#define MON_X               (WEIGHT_X - 10 - MODE_W)
 #define MON_VOLUME          (40)     /* percent: audio_out_set_volume(), both outputs */
 #define OCT_GAP             (6)      /* between bands */
 #define COL_PARTIAL         ((uint16_t)0x7BEF)   /* a band cut by Nyquist */
@@ -353,34 +340,8 @@ static void set_geometry(void)
     s_wf_qn = 0;                /* 0025 */
 }
 
-/* 0015: the two mode buttons, top right; the chosen one lit. */
-static void draw_mode_buttons(void)
-{
-    static const char *const names[MODE_COUNT] = { "BARS", "1/3 OCT", "FALL" };   /* 0016 */
-    const int label_h = ARK12_H * LABEL_SCALE;
-    land_fill(MODE_X - 1, MODE_Y - 1, MODE_COUNT * MODE_W + 2, MODE_H + 2, COL_BASE);
-    for (int i = 0; i < MODE_COUNT; i++) {
-        const bool on = (int)s_mode == i;
-        const int x = MODE_X + i * MODE_W;
-        land_fill(x, MODE_Y, MODE_W, MODE_H, on ? COL_LABEL : COL_BLACK);
-        const int tw = land_text_w(names[i], LABEL_SCALE);
-        land_text(x + (MODE_W - tw) / 2, MODE_Y + (MODE_H - label_h) / 2, names[i],
-                  LABEL_SCALE, on ? COL_BLACK : COL_LABEL);
-    }
-}
-
-/* 0016: the Fast/Slow switch, shown only in the 1/3-octave view. */
-static void draw_mon_button(void);        /* 0030: below, after the sources */
-
-static void draw_weight_button(void)
-{
-    const char *t = s_oct_slow ? "SLOW" : "FAST";
-    const int label_h = ARK12_H * LABEL_SCALE, tw = land_text_w(t, LABEL_SCALE);
-    land_fill(WEIGHT_X - 1, WEIGHT_Y - 1, WEIGHT_W + 2, WEIGHT_H + 2, COL_BASE);
-    land_fill(WEIGHT_X, WEIGHT_Y, WEIGHT_W, WEIGHT_H, COL_BLACK);
-    land_text(WEIGHT_X + (WEIGHT_W - tw) / 2, WEIGHT_Y + (WEIGHT_H - label_h) / 2, t,
-              LABEL_SCALE, COL_LABEL);
-}
+/* 0036: the gear and the tags, top right; menu.h, draw_menu() below. */
+static void draw_top_right(void);
 
 /* 0015: the waterfall's time labels and its colour key. */
 static void draw_waterfall_static(void)
@@ -416,7 +377,6 @@ static void draw_static(void)
 {
     land_fill(0, 0, s_w, s_h, COL_BLACK);
     land_text(10, 4, "Lothesome Audio Analyzer", TITLE_SCALE, COL_WHITE);
-    draw_mon_button();                      /* 0030: every view */
 
     for (int h = 0; h <= s_graph_h; h++) {
         int r, g;
@@ -461,8 +421,7 @@ static void draw_static(void)
                       oct_label[b], LABEL_SCALE, COL_LABEL);
         }
         hline(s_left, s_bottom, s_graph_w, COL_BASE);
-        draw_weight_button();
-        draw_mode_buttons();
+        draw_top_right();                   /* 0036 */
         gfx_blit(0, gfx_h());
         return;
     }
@@ -482,7 +441,7 @@ static void draw_static(void)
 
     hline(s_left, s_bottom, s_graph_w, COL_BASE);
     if (s_mode == MODE_WATERFALL) draw_waterfall_static();
-    draw_mode_buttons();
+    draw_top_right();                       /* 0036 */
     gfx_blit(0, gfx_h());
 }
 
@@ -566,15 +525,142 @@ static bool mon_possible(int src)
     return src == SRC_JACK || (src == SRC_USB && uac_present());
 }
 
-/* 0030: MON, lit when on and possible, dim when the source cannot be. */
-static void draw_mon_button(void)
+/* ---- 0036: the gear, its menu, and the licences page ---- */
+
+static bool s_menu;             /* the menu is open */
+static bool s_lic;              /* the licences page is open */
+static int  s_lic_scroll;       /* its first line on screen */
+
+#define LIC_LINE            (ARK12_H * LABEL_SCALE + 10)   /* 34 px */
+
+/* A box with a COL_BASE edge, lit or not, its text centred: the look the
+ * view buttons had (0015). */
+static void draw_seg(int x, int y, int w, int h, const char *t, bool lit, uint16_t ink)
 {
-    const bool can = mon_possible(s_source), on = s_mon_want && can;
-    const int label_h = ARK12_H * LABEL_SCALE, tw = land_text_w("MON", LABEL_SCALE);
-    land_fill(MON_X - 1, WEIGHT_Y - 1, MODE_W + 2, WEIGHT_H + 2, COL_BASE);
-    land_fill(MON_X, WEIGHT_Y, MODE_W, WEIGHT_H, on ? COL_LABEL : COL_BLACK);
-    land_text(MON_X + (MODE_W - tw) / 2, WEIGHT_Y + (WEIGHT_H - label_h) / 2, "MON",
-              LABEL_SCALE, on ? COL_BLACK : (can ? COL_LABEL : COL_BASE));
+    const int label_h = ARK12_H * LABEL_SCALE, tw = land_text_w(t, LABEL_SCALE);
+    land_fill(x - 1, y - 1, w + 2, h + 2, COL_BASE);
+    land_fill(x, y, w, h, lit ? COL_LABEL : COL_BLACK);
+    land_text(x + (w - tw) / 2, y + (h - label_h) / 2, t, LABEL_SCALE, lit ? COL_BLACK : ink);
+}
+
+/* A gear in MENU_GEAR_W: eight teeth round a ring, by distance and
+ * angle from the middle. Drawn once a repaint, so a fill a pixel is fine. */
+static void draw_gear(bool open)
+{
+    const int x0 = MENU_GEAR_X(LAND_W), y0 = MENU_GEAR_Y, n = MENU_GEAR_W;
+    const float c = (float)(n - 1) / 2.0f;
+    land_fill(x0, y0, n, n, open ? COL_LABEL : COL_BLACK);
+    const uint16_t ink = open ? COL_BLACK : COL_LABEL;
+    for (int j = 0; j < n; j++)
+        for (int i = 0; i < n; i++) {
+            const float dx = (float)i - c, dy = (float)j - c;
+            const float r = sqrtf(dx * dx + dy * dy);
+            /* src: proportions picked by eye on test/render's picture:
+             * hole 0.17, ring to 0.32, teeth to 0.47 of the box. */
+            const bool ring  = r >= 0.17f * n && r <= 0.32f * n;
+            const bool tooth = r > 0.32f * n && r <= 0.47f * n && cosf(8.0f * atan2f(dy, dx)) > 0.25f;
+            if (ring || tooth) land_fill(x0 + i, y0 + j, 1, 1, ink);
+        }
+}
+
+/* What is on, said where the buttons were: MON (lit when it plays, dim
+ * when this source cannot be monitored) and, in 1/3 OCT, the weighting. */
+static void draw_tags(void)
+{
+    const int x1 = LAND_W - 170 - 14, x0 = x1 - 260;    /* left of draw_fps() */
+    land_fill(x0, TAG_Y, x1 - x0, ARK12_H * LABEL_SCALE, COL_BLACK);
+    int x = x1;
+    if (s_mode == MODE_OCT) {
+        const char *t = s_oct_slow ? "SLOW" : "FAST";
+        x -= land_text_w(t, LABEL_SCALE);
+        land_text(x, TAG_Y, t, LABEL_SCALE, COL_LABEL);
+        x -= 24;
+    }
+    if (s_mon_want) {
+        x -= land_text_w("MON", LABEL_SCALE);
+        land_text(x, TAG_Y, "MON", LABEL_SCALE, mon_possible(s_source) ? COL_WHITE : COL_BASE);
+    }
+}
+
+static void draw_top_right(void)
+{
+    draw_gear(s_menu);
+    draw_tags();
+}
+
+static void draw_menu(void)
+{
+    static const char *const names[MODE_COUNT] = { "BARS", "1/3 OCT", "FALL" };   /* 0016 */
+    const int x0 = MENU_X(LAND_W), inset = 4;
+    const int h = MENU_ROW_H - 2 * inset;
+    land_fill(x0 - 1, MENU_Y - 1, MENU_W + 2, MENU_H + 2, COL_BASE);
+    land_fill(x0, MENU_Y, MENU_W, MENU_H, COL_BLACK);
+    for (int i = 0; i < MODE_COUNT; i++)
+        draw_seg(menu_seg_x(i, LAND_W) + inset, menu_row_y(0) + inset, MENU_SEG_W - 2 * inset, h,
+                 names[i], (int)s_mode == i, COL_LABEL);
+    /* The weighting is the 1/3-octave view's; dim in the others, and
+     * still changed by a press, for when that view is chosen. */
+    const uint16_t wink = s_mode == MODE_OCT ? COL_LABEL : COL_BASE;
+    draw_seg(menu_seg_x(0, LAND_W) + inset, menu_row_y(1) + inset, MENU_SEG_W - 2 * inset, h,
+             "FAST", !s_oct_slow && s_mode == MODE_OCT, wink);
+    draw_seg(menu_seg_x(1, LAND_W) + inset, menu_row_y(1) + inset, MENU_SEG_W - 2 * inset, h,
+             "SLOW", s_oct_slow && s_mode == MODE_OCT, wink);
+    land_text(menu_seg_x(2, LAND_W) + inset + 6, menu_row_y(1) + (MENU_ROW_H - ARK12_H * LABEL_SCALE) / 2,
+              "1/3 OCT", LABEL_SCALE, COL_BASE);
+    const bool can = mon_possible(s_source);
+    draw_seg(x0 + MENU_PAD + inset, menu_row_y(2) + inset, MENU_W - 2 * MENU_PAD - 2 * inset, h,
+             !can ? (s_mon_want ? "MON on - no headset" : "MON - no headset")
+                  : (s_mon_want ? "MON on" : "MON off"),
+             s_mon_want && can, can ? COL_LABEL : COL_BASE);
+    draw_seg(x0 + MENU_PAD + inset, menu_row_y(3) + inset, MENU_W - 2 * MENU_PAD - 2 * inset, h,
+             "LICENCES", false, COL_LABEL);
+    draw_gear(true);
+    land_blit(x0 - 1, LAND_W);
+}
+
+/*
+ * The whole screen: what this firmware is built from, as libversions.h
+ * has it -- module, checkout, licence -- in three columns as wide as
+ * their longest entry. Paged by up and down if it does not fit.
+ */
+static void draw_licences(void)
+{
+    const int rows = lic_rows(LAND_H, LIC_LINE);
+    static int cw[3];
+    if (!cw[0]) {
+        for (int i = 0; i < LIBVERSIONS_COUNT; i++)
+            for (int c = 0; c < 3; c++) {
+                const int w = land_text_w(k_libversions[i][c], LABEL_SCALE);
+                if (w > cw[c]) cw[c] = w;
+            }
+    }
+    const int gap = 40, x0 = LIC_MARGIN + 20, x1 = x0 + cw[0] + gap, x2 = x1 + cw[1] + gap;
+
+    land_fill(0, 0, LAND_W, LAND_H, COL_BLACK);
+    land_text(LIC_MARGIN, 4, "Licences", TITLE_SCALE, COL_WHITE);
+    land_text(LIC_MARGIN + land_text_w("Licences", TITLE_SCALE) + 30, 14,
+              "github.com/Sudrien/lothesome-audio-analyzer-for-m5tab5", LABEL_SCALE, COL_LABEL);
+    for (int r = 0; r < rows; r++) {
+        const int i = s_lic_scroll + r;
+        if (i >= LIBVERSIONS_COUNT) break;
+        const int y = LIC_HEAD_H + r * LIC_LINE;
+        land_text(x0, y, k_libversions[i][0], LABEL_SCALE, COL_WHITE);
+        land_text(x1, y, k_libversions[i][1], LABEL_SCALE, COL_LABEL);
+        land_text(x2, y, k_libversions[i][2], LABEL_SCALE, COL_LABEL);
+    }
+    const int by = lic_btn_y(LAND_H);
+    draw_seg(lic_close_x(), by, LIC_BTN_W, LIC_BTN_H, "CLOSE", false, COL_LABEL);
+    if (LIBVERSIONS_COUNT > rows) {
+        /* three ints and " of ": 36 at the most, as -Wformat-truncation counts */
+        char page[40];
+        const int last = s_lic_scroll + rows < LIBVERSIONS_COUNT ? s_lic_scroll + rows : LIBVERSIONS_COUNT;
+        snprintf(page, sizeof(page), "%d-%d of %d", s_lic_scroll + 1, last, LIBVERSIONS_COUNT);
+        land_text((LAND_W - land_text_w(page, LABEL_SCALE)) / 2, by + (LIC_BTN_H - ARK12_H * LABEL_SCALE) / 2,
+                  page, LABEL_SCALE, COL_BASE);
+        draw_seg(lic_up_x(LAND_W), by, LIC_BTN_W, LIC_BTN_H, "UP", false, COL_LABEL);
+        draw_seg(lic_down_x(LAND_W), by, LIC_BTN_W, LIC_BTN_H, "DOWN", false, COL_LABEL);
+    }
+    gfx_blit(0, gfx_h());
 }
 
 
@@ -961,7 +1047,7 @@ static void waterfall_push(int n, int *x0, int *x1)
 /* 0007: which source the bars are, between the title and the fps. */
 static void draw_source(int src)
 {
-    const int x = 560, y = 14, h = ARK12_H * LABEL_SCALE, x_end = MODE_X - 14;   /* 0015 */
+    const int x = 560, y = 14, h = ARK12_H * LABEL_SCALE, x_end = MENU_GEAR_X(LAND_W) - 14;   /* 0015, 0036 */
     land_fill(x, y, x_end - x, h, COL_BLACK);
     if (src != SRC_USB) {
         land_text(x, y, k_source_name[src], LABEL_SCALE, COL_LABEL);
@@ -1168,10 +1254,15 @@ void app_main(void)
         const float dt = spectrum_clampf((float)(now - last_us) * 1e-6f, 0.0005f, 0.25f);
         last_us = now;
 
-        int x0, x1;
-        render(dt, &x0, &x1);
+        /* 0036: with the menu or the licences page open the graph is
+         * not drawn -- it would draw over them. Capture, the FFT and the
+         * meter carry on; closing repaints the graph from the floor, as
+         * a change of view does. */
+        const bool overlay = s_menu || s_lic;
+        int x0 = 0, x1 = 0;
+        if (!overlay) render(dt, &x0, &x1);
         const int64_t tb = esp_timer_get_time();
-        waterfall_push(spectrum_wf_rows(&s_wf_acc, dt, WF_ROWS_PER_SEC), &x0, &x1);  /* 0015 */
+        if (!overlay) waterfall_push(spectrum_wf_rows(&s_wf_acc, dt, WF_ROWS_PER_SEC), &x0, &x1);  /* 0015 */
         const int64_t tf = esp_timer_get_time();
         if (x1 > x0) land_blit(x0, x1);
         const int64_t tl = esp_timer_get_time();
@@ -1185,6 +1276,8 @@ void app_main(void)
             shown_rate = s_rate;
             layout_for(shown_rate, shown_source);
             draw_source(shown_source);
+            if (s_lic) draw_licences();         /* 0036: over the repaint */
+            else if (s_menu) draw_menu();
         }
         const int64_t t3 = esp_timer_get_time();
 
@@ -1202,7 +1295,7 @@ void app_main(void)
                      fps, t_capture / 1000.0f / frames, t_fft / 1000.0f / frames,
                      t_draw / 1000.0f / frames, t_bars / 1000.0f / frames,
                      t_fall / 1000.0f / frames, t_blit / 1000.0f / frames);
-            draw_fps(fps);
+            if (!s_menu && !s_lic) draw_fps(fps);     /* 0036 */
             frames = 0;
             report_us = t3;
             t_capture = t_fft = t_draw = 0;
@@ -1210,7 +1303,7 @@ void app_main(void)
         }
 
         /* 0014: the meter's line, and a held press to reset it. */
-        if (t3 - meter_us >= METER_DRAW_US) {
+        if (t3 - meter_us >= METER_DRAW_US && !s_menu && !s_lic) {     /* 0036 */
             meter_us = t3;
             draw_meters();
         }
@@ -1223,39 +1316,74 @@ void app_main(void)
                 press_on_mode = false;
             } else if (press_us < 0) {
                 press_us = t3;
-                /* 0015: a press on a mode button picks that mode. */
-                if (ty >= 0 && ty < MODE_HIT_Y1 && tx >= MODE_HIT_X0 && tx < s_w) {   /* 0021 */
+                /* 0036: the licences page, the menu, or the gear. Any
+                 * press while either is open is theirs, not the meter's. */
+                if (s_lic) {
                     press_on_mode = true;
-                    int i = (tx - MODE_X) / MODE_W;                 /* 0016 */
-                    if (tx < MODE_X) i = 0;
-                    if (i > MODE_COUNT - 1) i = MODE_COUNT - 1;
-                    const view_mode_t want = (view_mode_t)i;
-                    if (want != s_mode && shown_source >= 0) {
-                        s_mode = want;
-                        layout_for(shown_rate, shown_source);
-                        draw_source(shown_source);
+                    const int rows = lic_rows(LAND_H, LIC_LINE);
+                    switch (lic_at(tx, ty, s_w, s_h)) {
+                    case LIC_HIT_UP:
+                        s_lic_scroll = s_lic_scroll > rows ? s_lic_scroll - rows : 0;
+                        draw_licences();
+                        break;
+                    case LIC_HIT_DOWN:
+                        if (s_lic_scroll + rows < LIBVERSIONS_COUNT) s_lic_scroll += rows;
+                        draw_licences();
+                        break;
+                    default:
+                        s_lic = false;
+                        if (shown_source >= 0) {
+                            layout_for(shown_rate, shown_source);
+                            draw_source(shown_source);
+                        }
                         meter_us = 0;       /* the repaint wiped the meter line */
-                        ESP_LOGI(TAG, "mode: %s", want == MODE_WATERFALL ? "waterfall" :
-                                                  want == MODE_OCT ? "1/3 octave" : "bars");
+                        break;
                     }
-                } else if (ty >= WEIGHT_HIT_Y0 && ty < WEIGHT_HIT_Y1 &&
-                           tx >= MON_X - 10 && tx < MON_X + MODE_W + 5) {      /* 0030: MON */
+                } else if (s_menu) {
                     press_on_mode = true;
-                    s_mon_want = !s_mon_want;
-                    if (s_mon_want) audio_out_set_volume(MON_VOLUME);
-                    ESP_LOGI(TAG, "monitor: %s%s", s_mon_want ? "on" : "off",
-                             s_mon_want && !mon_possible(s_source) ? " (not for this source)" : "");
-                    draw_mon_button();
-                    land_blit(MON_X - 1, MON_X + MODE_W + 1);
-                } else if (s_mode == MODE_OCT && ty >= WEIGHT_HIT_Y0 && ty < WEIGHT_HIT_Y1 &&
-                           tx >= WEIGHT_X - 5 && tx < WEIGHT_X + WEIGHT_W + 10) {     /* 0021, 0030 */
-                    /* 0016: Fast <-> Slow. The averages carry on, so the
-                     * bars glide to the new weighting rather than jump. */
+                    const menu_hit_t hit = menu_at(tx, ty, s_w);
+                    if (hit >= MENU_HIT_BARS && hit <= MENU_HIT_FALL) {
+                        /* 0015, 0016: a view; the menu stays, over it */
+                        const view_mode_t want = (view_mode_t)(hit - MENU_HIT_BARS);
+                        if (want != s_mode && shown_source >= 0) {
+                            s_mode = want;
+                            layout_for(shown_rate, shown_source);
+                            draw_source(shown_source);
+                            ESP_LOGI(TAG, "mode: %s", want == MODE_WATERFALL ? "waterfall" :
+                                                      want == MODE_OCT ? "1/3 octave" : "bars");
+                        }
+                        draw_menu();
+                    } else if (hit == MENU_HIT_FAST || hit == MENU_HIT_SLOW) {
+                        /* 0016: Fast <-> Slow. The averages carry on, so the
+                         * bars glide to the new weighting rather than jump. */
+                        s_oct_slow = hit == MENU_HIT_SLOW;
+                        ESP_LOGI(TAG, "1/3 octave: %s", s_oct_slow ? "slow" : "fast");   /* 0021 */
+                        draw_menu();
+                    } else if (hit == MENU_HIT_MON) {
+                        s_mon_want = !s_mon_want;                   /* 0030 */
+                        if (s_mon_want) audio_out_set_volume(MON_VOLUME);
+                        ESP_LOGI(TAG, "monitor: %s%s", s_mon_want ? "on" : "off",
+                                 s_mon_want && !mon_possible(s_source) ? " (not for this source)" : "");
+                        draw_menu();
+                    } else if (hit == MENU_HIT_LICENCES) {
+                        s_menu = false;
+                        s_lic = true;
+                        s_lic_scroll = 0;
+                        ESP_LOGI(TAG, "licences: %d entries", LIBVERSIONS_COUNT);
+                        draw_licences();
+                    } else if (hit == MENU_HIT_OUTSIDE) {
+                        /* the gear again, or anywhere off the menu: closed */
+                        s_menu = false;
+                        if (shown_source >= 0) {
+                            layout_for(shown_rate, shown_source);
+                            draw_source(shown_source);
+                        }
+                        meter_us = 0;
+                    }
+                } else if (menu_gear_hit(tx, ty, s_w)) {
                     press_on_mode = true;
-                    s_oct_slow = !s_oct_slow;
-                    ESP_LOGI(TAG, "1/3 octave: %s", s_oct_slow ? "slow" : "fast");   /* 0021 */
-                    draw_weight_button();
-                    land_blit(WEIGHT_X - 1, WEIGHT_X + WEIGHT_W + 1);
+                    s_menu = true;
+                    draw_menu();
                 }
             } else if (!press_on_mode && !reset_done && t3 - press_us >= RESET_HOLD_US) {
                 s_meter_reset_req = true;
