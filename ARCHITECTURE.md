@@ -777,3 +777,23 @@ copied to both sides. analyzer.c is not host-built. Not built with
 ESP-IDF here. No sdkconfig.defaults or idf_component.yml change. On the
 board: a stereo USB microphone's left and right audible apart in the
 headset with MON on, and the same `monitor: USB output at N Hz` line.
+
+### 0035 -- CI: build provenance for the released binaries
+
+The release workflow attests both binaries with
+actions/attest-build-provenance, as defeatist's 8005 does: a
+Sigstore-signed statement that a file with this SHA-256 came out of
+this workflow, at this commit. It is stored against the repository,
+not in the file, so the standalone and app images are unchanged and
+flash, or install under M5Launcher, as before. It is not ESP32 Secure
+Boot, which would burn eFuses and lock the Tab5 to one key.
+
+It lets the web flasher (another-webflasher-for-m5tab5), or anyone with
+a copy, tell a build of this repository from a file with the same name:
+
+    gh attestation verify lothesome_<tag>_audio_analyzer_for_m5tab5_standalone.bin \
+        --repo Sudrien/lothesome-audio-analyzer-for-m5tab5
+
+Every run attests, a manual one without a release included. The job
+gains `id-token: write` and `attestations: write`. Releases before this
+have no attestation. Not yet run on CI.

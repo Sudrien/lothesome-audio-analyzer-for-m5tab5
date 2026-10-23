@@ -34,6 +34,11 @@ on:
 # a fifteen-minute build.
 permissions:
   contents: write
+  # 0035: build provenance. id-token gets the short-lived certificate
+  # the attestation is signed with; attestations stores it against this
+  # repository.
+  id-token: write
+  attestations: write
 
 jobs:
   build:
@@ -79,6 +84,19 @@ jobs:
           idf.py merge-bin
           mv build/merged-binary.bin build/lothesome_${{ steps.ver.outputs.name }}_audio_analyzer_for_m5tab5_standalone.bin
           mv build/lothesome_audio_analyzer_for_m5tab5.bin build/lothesome_${{ steps.ver.outputs.name }}_audio_analyzer_for_m5tab5.bin
+
+      # 0035: a signed record that these two files, by their SHA-256,
+      # were built by this workflow from this commit. It is stored with
+      # the repository, not in the files: the .bins are byte for byte
+      # what they were and flash as before. Every run attests, not only
+      # a release, so a downloaded artifact can be checked too:
+      #   gh attestation verify <file> --repo Sudrien/lothesome-audio-analyzer-for-m5tab5
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            build/lothesome_${{ steps.ver.outputs.name }}_audio_analyzer_for_m5tab5_standalone.bin
+            build/lothesome_${{ steps.ver.outputs.name }}_audio_analyzer_for_m5tab5.bin
 
       - name: Archive build output artifacts
         uses: actions/upload-artifact@v4
