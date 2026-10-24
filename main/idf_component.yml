@@ -7,10 +7,10 @@ dependencies:
   # branch would change underneath a build that worked.
   feckless_drivers:
     git: https://github.com/Sudrien/feckless-drivers-for-m5tab5.git
-    version: "v0.5.0"   # 0030: audio_out_monitor_write()
+    version: "v0.5.9"   # 0030: audio_out_monitor_write()
   feckless_graphics_handler:
     git: https://github.com/Sudrien/feckless-graphics-handler-for-m5tab5.git
-    version: "v0.2.0"
+    version: "v0.2.4"
 
   # feckless-drivers requires the USB audio class driver by name and does
   # not fetch it (the player vendors a fixed copy). This program never
