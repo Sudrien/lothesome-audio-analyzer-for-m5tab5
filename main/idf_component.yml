@@ -10,7 +10,7 @@ dependencies:
     version: "v0.5.9"   # 0030: audio_out_monitor_write()
   feckless_graphics_handler:
     git: https://github.com/Sudrien/feckless-graphics-handler-for-m5tab5.git
-    version: "v0.2.4"
+    version: "v0.2.7"
 
   # feckless-drivers requires the USB audio class driver by name and does
   # not fetch it (the player vendors a fixed copy). This program never

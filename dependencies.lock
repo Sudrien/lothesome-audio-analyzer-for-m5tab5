@@ -137,7 +137,7 @@ dependencies:
       type: git
     version: cd9c246e82305bbc1d3ffe1ff5248251c68b68ee
   feckless_graphics_handler:
-    component_hash: 6ff525bb1b1e2dd53e81edf2427c062a39aec9ecfd463bc3be3e4c18cd08cb9b
+    component_hash: dbe765548ffbb53d449fb620d3b9636e97d9aa66d90bf5a3b51f3aca9f7db02d
     dependencies:
     - name: idf
       version: '>=5.4.2'
@@ -147,7 +147,7 @@ dependencies:
       git: https://github.com/Sudrien/feckless-graphics-handler-for-m5tab5.git
       path: .
       type: git
-    version: 30d848e2fc4d80cc50379779421e9fa86d99353a
+    version: e9c88afbedffabef75de3f7ccc51b4ddb5cf5801
   idf:
     source:
       type: idf
@@ -158,6 +158,6 @@ direct_dependencies:
 - feckless_drivers
 - feckless_graphics_handler
 - idf
-manifest_hash: 4ea25f4aad2796c9611bed999e0201788c7310dc09ac80b65d41f926cd1f19d7
+manifest_hash: 13f6c313f131a66b8eb4aec8342b9bc0ae39789b5780569c3432810179d7dfd5
 target: esp32p4
 version: 3.0.0
