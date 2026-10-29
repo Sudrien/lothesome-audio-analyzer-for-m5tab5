@@ -6,13 +6,15 @@
 #
 # Read with the tags in idf_component.yml: the names are the libraries'
 # at those tags, and their signatures and data layouts are what the
-# names mean. Taken from an ESP-IDF 5.5 build.
+# names mean. Taken from an ESP-IDF 5.5 build, and the one an IDF 6.1
+# build added (0038).
 __adddf3
 __divdf3
 __extendsfdf2
 __floatdisf
 __floatundidf
 __floatunsidf
+__issignalingf
 __ledf2
 __muldf3
 __popcountsi2

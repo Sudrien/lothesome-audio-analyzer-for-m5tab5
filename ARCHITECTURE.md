@@ -898,3 +898,11 @@ between `_binary_lothesome_analyzer_app_elf_start` and `_end` in the
 build; an IDF 6.1 build may name different symbols for the same calls,
 and if it does the check says which. Not on the board: the speed of
 the FFT and the draw from PSRAM is the thing to watch.
+
+### 0038 -- __issignalingf, for IDF 6.1
+
+An IDF 6.1 build (GCC 15.2) failed the check of 0037 on one symbol the
+5.5 build did not need: `__issignalingf`, a helper newlib's libm calls
+in its newer float functions. It is the host's libm's, so it goes in
+`exports.txt`. 5.5 builds now report it as exported and unused, which
+is only reported; the ELF is the same either way.
