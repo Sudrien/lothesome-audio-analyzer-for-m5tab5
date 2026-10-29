@@ -938,3 +938,20 @@ what the analyzer calls.
 Built as 0037 was (IDF 5.5.1, component manager off), with
 feckless-abi-for-m5tab5 from a local copy: v0.1.0 is not tagged yet,
 and this patch's manifest needs it. Not on the board.
+
+### 0040 -- feckless ABI v0.2.0: the analyzer under Duplicitous
+
+feckless-abi v0.2.0 is still ABI version 1. Its libraries
+(feckless-drivers v0.5.10, feckless-graphics-handler v0.2.8) let an app
+initialise a board that is already up: Duplicitous runs this ELF from
+its menu with no restart, on the panel, touch and USB port it was
+using. Nothing in app_main() changes. tab5io_init(), lcd_init(),
+gfx_init(), touch_init() and usbhost_init() return ESP_OK and reset
+what a first call would, and uac_init() registers late, so the port's
+power is cycled and a USB microphone already in it is seen. The comment
+above that says so.
+
+The ABI component now also checks this build's configuration against
+what a launcher must share; this one passes, with no warnings.
+
+Built as 0039 was, and Duplicitous's 0023 with it; not on a Tab5.

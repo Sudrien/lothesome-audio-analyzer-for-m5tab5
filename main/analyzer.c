@@ -1196,8 +1196,10 @@ void app_main(void)
     /*
      * 0008: the USB-A port, for a USB microphone. Not fatal: without it
      * the built-in mics and the jack still work. The UAC class driver is
-     * registered before the port comes up, as usbhost.h requires, and
-     * usbhost_start() powers the port on its own bus task.
+     * registered before the port comes up, and usbhost_start() powers the
+     * port on its own bus task. 0040: under a launcher the port is
+     * already up; the class is installed late and the port's power
+     * cycled, so a microphone already plugged in is seen.
      */
     if (usbhost_init(tab5io_exp2()) == ESP_OK && uac_init() == ESP_OK) {
         usbhost_start();
