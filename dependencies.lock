@@ -146,7 +146,7 @@ dependencies:
     - linux
     version: 1.5.0
   feckless_abi:
-    component_hash: 97bbe625f958ada399cacee84e1819c376dac0f170bf5845433733257bd16d5c
+    component_hash: 1a61759f604e23b88f7bd197628b37d6f27669f7b780b5b9b109eed69d6cb9f9
     dependencies:
     - name: idf
       version: '>=5.4.2'
@@ -155,7 +155,7 @@ dependencies:
       version: v0.5.10
     - git: https://github.com/Sudrien/feckless-graphics-handler-for-m5tab5.git
       name: feckless_graphics_handler
-      version: v0.2.8
+      version: v0.2.9
     - name: espressif/usb_host_uac
       version: 1.5.0
     - name: espressif/elf_loader
@@ -164,7 +164,7 @@ dependencies:
       git: https://github.com/Sudrien/feckless-abi-for-m5tab5.git
       path: .
       type: git
-    version: 56bc6e34d70952295f9056c6af4ab33efefb284f
+    version: 3126b6824c293ed935a41dd29278d9d8d67dd60a
   feckless_drivers:
     component_hash: dba8377caed308148ac32b8f9c1d7eb3d081be4e437da71785a21256d29adbf3
     dependencies:
@@ -180,7 +180,7 @@ dependencies:
       type: git
     version: dad9e7a8d0d6d073aa6fa87ffdc4684c0f2b6b35
   feckless_graphics_handler:
-    component_hash: bde496d8c0dc996ae6cabff258c3d4dd3631ed0f2be84e09795a1272a2e24c16
+    component_hash: 06284e8ef8f407280a82965da28f3908bdd0fa0a4a5f190d3051df8c2a13ec4d
     dependencies:
     - name: idf
       version: '>=5.4.2'
@@ -190,7 +190,7 @@ dependencies:
       git: https://github.com/Sudrien/feckless-graphics-handler-for-m5tab5.git
       path: .
       type: git
-    version: bc2cbf0fac16b99742c15c1b7ea4643a732387cd
+    version: 2c869be0f230601ed585d3fccf53ef1e22ea8080
   idf:
     source:
       type: idf
@@ -199,6 +199,6 @@ direct_dependencies:
 - espressif/esp-dsp
 - feckless_abi
 - idf
-manifest_hash: 5e38ba3fc410000f2f47409449a6880ea168981801e77a91319c21cd294d549b
+manifest_hash: 9569267b869a820f0c63cbaf0ed7971db2f6a082ab1056d2a2b04bf3037a5d7c
 target: esp32p4
 version: 3.0.0
