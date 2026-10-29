@@ -906,3 +906,35 @@ An IDF 6.1 build (GCC 15.2) failed the check of 0037 on one symbol the
 in its newer float functions. It is the host's libm's, so it goes in
 `exports.txt`. 5.5 builds now report it as exported and unused, which
 is only reported; the ELF is the same either way.
+
+### 0039 -- the feckless ABI, from feckless-abi-for-m5tab5
+
+0037's ABI was lothesome's own: whatever analyzer.c called. A launcher
+cannot follow a list per app, so the ABI is now
+feckless-abi-for-m5tab5's, the same for every app. It covers both
+libraries' whole public API at their tags, plus a fixed set from IDF,
+libc, libm and libgcc: version 1, 299 names. `components/lothesome_abi`
+and `cmake/abicheck.cmake` are gone. The feckless pins live in that
+repository, and main's manifest names its tag.
+
+**esp-dsp is in the ELF now**, through `ELF_COMPONENTS`, not in the ABI.
+Its P4 assembly links position-independent after all. The ELF grew from
+34 KB to 50 KB and imports 85 symbols: none from esp-dsp, and one new,
+`feckless_abi_v1`.
+
+**analyzer.c calls `feckless_abi_require()`** first in app_main(). That
+reference ties the ELF to ABI v1. On a launcher of another version,
+esp_elf_relocate() fails and names the symbol, before any of the
+analyzer runs. `feckless_abi_elf()` replaces `project_elf()` in `elf/`
+and checks the ELF as it links it. It fails on a symbol outside the
+ABI, or without the call: a build with the call commented out stopped
+with "does not refer to feckless_abi_v1".
+
+The .bin is still standalone.c and the embedded ELF, now loaded with
+`feckless_abi_run()`. It grew to 1,118 KB, because the host's table names
+every symbol in the ABI and so links all of both libraries, not only
+what the analyzer calls.
+
+Built as 0037 was (IDF 5.5.1, component manager off), with
+feckless-abi-for-m5tab5 from a local copy: v0.1.0 is not tagged yet,
+and this patch's manifest needs it. Not on the board.

@@ -50,8 +50,8 @@ CONFIG_USB_HOST_CONTROL_TRANSFER_MAX_SIZE=1024
 # periodic TX the rest.
 CONFIG_USB_HOST_HW_BUFFER_BIAS_PERIODIC_OUT=y
 
-# 0037: the analyzer is an ELF the firmware loads (elf/, components/
-# lothesome_abi). esp_elf puts it in PSRAM, which the P4 can execute
+# 0037: the analyzer is an ELF the firmware loads (elf/, and 0039's
+# feckless_abi). esp_elf puts it in PSRAM, which the P4 can execute
 # from; internal SRAM is not executable while PMP splits it from IRAM,
 # and the DMA needs it more. Memory protection off, as elf_loader's
 # PSRAM examples have it.

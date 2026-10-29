@@ -2,9 +2,15 @@ dependencies:
   idf:
     version: ">=5.4.2"
 
-  # 0037: the libraries are components/lothesome_abi's, pinned there: the
-  # tags are the ELF's ABI, and a launcher that adds that component gets
-  # the same ones. A path, not just the components/ directory, because
-  # elf/ is a project of its own and does not look there.
-  lothesome_abi:
-    path: ../components/lothesome_abi
+  # 0039: the feckless ABI -- the libraries, pinned there, and the list
+  # of what the ELF may take from a launcher. Its tag is the ABI this
+  # analyzer is built for; a launcher on the same one runs it.
+  feckless_abi:
+    git: https://github.com/Sudrien/feckless-abi-for-m5tab5.git
+    version: "v0.1.0"
+
+  # The FFT. Replaces arduinoFFT. Optimised for the P4 (dsps_fft2r_fc32
+  # picks the arp4 assembly when it can). Its windows do not include
+  # Hamming, so analyzer.c computes that one itself. 0039: linked into
+  # the ELF, so not part of the ABI.
+  espressif/esp-dsp: "^1.8.0"

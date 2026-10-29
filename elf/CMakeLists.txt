@@ -1,6 +1,8 @@
 # 0037: the analyzer as an ELF for esp_elf -- main/analyzer.c, the same
 # file the .bin runs, linked position-independent with every library
-# call left undefined. The libraries are components/lothesome_abi's.
+# call left undefined but esp-dsp's, which is linked in. The rest is
+# the feckless ABI's (feckless-abi-for-m5tab5, 0039), and the build
+# checks the ELF against it.
 #
 # The top-level build runs this one (main/CMakeLists.txt) and embeds
 # what it makes. On its own:
@@ -47,8 +49,16 @@ idf_build_set_property(DEPENDENCIES_LOCK "${CMAKE_CURRENT_LIST_DIR}/../dependenc
 
 project(lothesome_analyzer)
 
-include(elf_loader)
-project_elf(lothesome_analyzer)
+# 0039: esp-dsp into the ELF, not the ABI. Its name is
+# espressif__esp-dsp from the registry; whichever it is, it is the
+# component whose name ends so.
+idf_build_get_property(_comps BUILD_COMPONENTS)
+foreach(_c IN LISTS _comps)
+    if(_c MATCHES "(^|__)esp-dsp$")
+        set(ELF_COMPONENTS "${_c}")
+    endif()
+endforeach()
+feckless_abi_elf(lothesome_analyzer)
 
 # 0036: libversions.h, which analyzer.c includes. Moved here from the
 # top-level CMakeLists.txt with analyzer.c.

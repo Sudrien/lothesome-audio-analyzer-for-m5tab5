@@ -15,9 +15,9 @@ idf.py build flash monitor
 
 The analyzer itself is an ELF that the firmware loads with esp_elf; the
 build makes it in `build/elf/` and embeds it. Each release also
-publishes it alone, with the list of symbols a host must export for it,
-for a launcher: such a program adds `components/lothesome_abi` at the
-release's tag and calls `lothesome_abi_run()`.
+publishes it alone, for a launcher on the same
+[feckless ABI](https://github.com/Sudrien/feckless-abi-for-m5tab5)
+(the tag in `main/idf_component.yml`).
 
 ## Sources
 

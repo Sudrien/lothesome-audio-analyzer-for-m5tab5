@@ -1,13 +1,13 @@
 # 0037: one directory, two builds. elf/ sets LOTHESOME_ELF and builds
-# analyzer.c into the ELF; the top level builds standalone.c, runs elf/,
-# checks what it made against the ABI and embeds it.
+# analyzer.c into the ELF, and checks it against the feckless ABI (0039);
+# the top level builds standalone.c, runs elf/ and embeds what it made.
 idf_build_get_property(_lothesome_elf LOTHESOME_ELF)
 
 if(_lothesome_elf)
     idf_component_register(
         SRCS "analyzer.c"
         INCLUDE_DIRS "."
-        REQUIRES lothesome_abi feckless_drivers feckless_graphics_handler
+        REQUIRES feckless_abi feckless_drivers feckless_graphics_handler
                  esp-dsp esp_timer
                  esp_app_format   # 0005: esp_app_get_description()
     )
@@ -16,7 +16,7 @@ endif()
 
 idf_component_register(
     SRCS "standalone.c"
-    PRIV_REQUIRES lothesome_abi
+    PRIV_REQUIRES feckless_abi
 )
 
 if(NOT CMAKE_BUILD_EARLY_EXPANSION)
@@ -44,20 +44,9 @@ if(NOT CMAKE_BUILD_EARLY_EXPANSION)
         INSTALL_COMMAND ""
     )
 
-    string(REPLACE "-gcc" "-readelf" _readelf "${CMAKE_C_COMPILER}")
-    set(_stamp "${_elf_dir}/abicheck.stamp")
-    add_custom_command(
-        OUTPUT "${_stamp}"
-        COMMAND ${CMAKE_COMMAND} -DREADELF=${_readelf} -DELF=${_elf}
-                -DEXPORTS=${_project_dir}/components/lothesome_abi/exports.txt
-                -DSTAMP=${_stamp}
-                -P ${_project_dir}/cmake/abicheck.cmake
-        DEPENDS "${_elf}" lothesome_elf
-                "${_project_dir}/components/lothesome_abi/exports.txt"
-        COMMENT "Checking the ELF against exports.txt"
-    )
-    add_custom_target(lothesome_abicheck DEPENDS "${_stamp}")
-    add_dependencies(${COMPONENT_LIB} lothesome_abicheck)
+    # elf/ checked it against the ABI as it linked it (0039); embedding
+    # waits for that.
+    add_dependencies(${COMPONENT_LIB} lothesome_elf)
 
     # elf_loader's: 4-byte aligned, as esp_elf_relocate() wants it.
     elf_embed_aligned_binary(${COMPONENT_LIB} "${_elf}" BINARY)
