@@ -955,3 +955,12 @@ The ABI component now also checks this build's configuration against
 what a launcher must share; this one passes, with no warnings.
 
 Built as 0039 was, and Duplicitous's 0023 with it; not on a Tab5.
+
+### 0041 -- feckless ABI v0.2.1
+
+0040's v0.2.0 named feckless-graphics-handler v0.2.8, tagged without
+the change that lets lcd_init() and gfx_init() run a second time. Under
+Duplicitous the analyzer's lcd_init() would have failed its
+ESP_ERROR_CHECK and restarted the Tab5. v0.2.1 names v0.2.9, which has
+it. The standalone .bin calls each init once and was not affected. Not
+built.

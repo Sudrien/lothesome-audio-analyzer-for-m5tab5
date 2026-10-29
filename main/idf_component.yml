@@ -7,7 +7,7 @@ dependencies:
   # analyzer is built for; a launcher on the same one runs it.
   feckless_abi:
     git: https://github.com/Sudrien/feckless-abi-for-m5tab5.git
-    version: "v0.2.0"   # 0040: runs on a board a launcher has up
+    version: "v0.2.1"   # 0040: runs on a board a launcher has up; 0041: v0.2.1
 
   # The FFT. Replaces arduinoFFT. Optimised for the P4 (dsps_fft2r_fc32
   # picks the arp4 assembly when it can). Its windows do not include
