@@ -1,0 +1,95 @@
+# 0037: the ABI. Every symbol the analyzer's ELF leaves undefined, which
+# the host must hand to esp_elf: one a line, sorted. The build checks
+# the ELF against this list (cmake/abicheck.cmake) and fails on any it
+# needs that is not here. Adding one is an ABI change: a launcher linked
+# against the old list will not load the new ELF.
+#
+# Read with the tags in idf_component.yml: the names are the libraries'
+# at those tags, and their signatures and data layouts are what the
+# names mean. Taken from an ESP-IDF 5.5 build.
+__adddf3
+__divdf3
+__extendsfdf2
+__floatdisf
+__floatundidf
+__floatunsidf
+__ledf2
+__muldf3
+__popcountsi2
+__subdf3
+__truncdfsf2
+_esp_error_check_failed
+ark12_ckpt
+ark12_flags
+ark12_lit
+ark12_litbase
+ark12_runs
+ark12_tiles
+atan2f
+audio_out_capture_begin
+audio_out_capture_end
+audio_out_capture_read
+audio_out_headphones
+audio_out_init
+audio_out_monitor_write
+audio_out_set_volume
+cos
+cosf
+dsps_bit_rev_fc32_ansi
+dsps_fft2r_fc32_arp4_
+dsps_fft2r_init_fc32
+dsps_fft_w_table_fc32
+esp_app_get_description
+esp_err_to_name
+esp_log
+esp_log_timestamp
+esp_timer_get_time
+exp
+expf
+floorf
+gfx_blit
+gfx_fb
+gfx_fill_rect
+gfx_h
+gfx_init
+gfx_w
+heap_caps_malloc
+lcd_backlight_set
+lcd_init
+log10
+log10f
+logf
+memcpy
+memmove
+memset
+powf
+sin
+sinf
+snprintf
+sqrt
+strlen
+tab5io_bus
+tab5io_exp1
+tab5io_exp2
+tab5io_init
+tan
+touch_get
+touch_init
+touch_present
+touch_set_rotation
+uac_generation
+uac_init
+uac_mic_announced
+uac_mic_close
+uac_mic_gone
+uac_mic_open_bits
+uac_mic_product
+uac_mic_read
+uac_present
+uac_stream_start
+uac_stream_stop
+uac_write
+usbhost_init
+usbhost_start
+vTaskDelay
+xTaskCreatePinnedToCore

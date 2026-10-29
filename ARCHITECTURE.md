@@ -851,3 +851,50 @@ again, with the gear. analyzer.c compiled in test/render with -Wall
 warnings back on, no new ones. In that run the components read "licence
 not found", as there is no managed_components/ without a build; a real
 build reads their copies. Not built with ESP-IDF, and not on the board.
+
+### 0037 -- the analyzer as an ELF, the libraries as its ABI
+
+**analyzer.c is now built into an ELF for esp_elf** (Espressif's
+elf_loader), published with each release, so a launcher can run the
+analyzer without having it compiled in. `elf/` is that build: its main
+is `../main`, `project_elf()` links it position-independent, and every
+call into a library is left undefined -- 86 symbols, 34 KB.
+
+**`components/lothesome_abi` is the other side**: the feckless
+libraries, usb_host_uac, esp-dsp and elf_loader, pinned in its manifest
+(moved there from main's, unchanged), and a table naming every symbol
+the ELF needs, which esp_elf resolves them against. The table is
+generated from `exports.txt`, and that file is the ABI. The build reads
+the ELF's undefined symbols and fails on any `exports.txt` lacks
+(`cmake/abicheck.cmake`), so a change to what analyzer.c calls cannot
+reach a release without changing the list. A launcher adds the
+component by git with `path: components/lothesome_abi` at the release's
+tag. esp-dsp is on the host side because its assembly is not written to
+be position-independent.
+
+**The .bin runs the same ELF.** One directory, two builds: in `elf/`,
+main is analyzer.c; at the top level it is standalone.c, which builds
+`elf/`, checks it, embeds it and loads it through lothesome_abi, as a
+launcher would. analyzer.c is not linked into the .bin at all, so what
+is flashed and what is published cannot differ.
+
+**The ELF's sdkconfig is the .bin's**, copied whole on each build:
+struct layouts and inlines in the headers depend on it. Only
+`partitions.csv` is made absolute, since `elf/` has none.
+
+**It runs from PSRAM.** esp_elf loads there (`ELF_LOADER_LOAD_PSRAM`);
+internal SRAM is not executable with the P4's PMP split, and the DMA
+needs it more. Memory protection is off, as in elf_loader's PSRAM
+examples. The statics in analyzer.c -- the capture and FFT buffers --
+are in the ELF's .bss, so in PSRAM as well, where before they were
+internal. None is a DMA buffer: i2s_channel_read() and _write() and the
+UAC driver copy to and from their own.
+
+Built with ESP-IDF 5.5.1, with the component manager off and the
+dependencies fetched from their repositories by hand (the registry was
+not reachable): the ELF passes the check and is the 34,296 bytes
+between `_binary_lothesome_analyzer_app_elf_start` and `_end` in the
+.bin, which grew from 905 KB to 1,048 KB. The export list is from that
+build; an IDF 6.1 build may name different symbols for the same calls,
+and if it does the check says which. Not on the board: the speed of
+the FFT and the draw from PSRAM is the thing to watch.

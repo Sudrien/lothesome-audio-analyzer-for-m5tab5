@@ -13,6 +13,12 @@ Rev 2 Tabs (ST7121 panel) only. ESP-IDF 5.5 or later:
 idf.py build flash monitor
 ```
 
+The analyzer itself is an ELF that the firmware loads with esp_elf; the
+build makes it in `build/elf/` and embeds it. Each release also
+publishes it alone, with the list of symbols a host must export for it,
+for a launcher: such a program adds `components/lothesome_abi` at the
+release's tag and calls `lothesome_abi_run()`.
+
 ## Sources
 
 The analyzer uses the first of these it finds, and names it at the top of

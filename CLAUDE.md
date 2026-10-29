@@ -30,7 +30,8 @@ applied -- a follow-up instead.
 
 Within a patch, change the lines that must change and no others.
 
-**Any change to `main/idf_component.yml` re-resolves
+**Any change to `main/idf_component.yml` or
+`components/lothesome_abi/idf_component.yml` re-resolves
 `dependencies.lock` on the next build**, and Claude cannot do that here.
 A patch that touches the manifest says so, and the lock that comes out
 of the next build has its diff read before it is committed.
@@ -42,7 +43,14 @@ build.** The defaults only fill keys an existing sdkconfig lacks.
 repository.** They are feckless-drivers-for-m5tab5 and
 feckless-graphics-handler-for-m5tab5. A change to them is a patch against
 that repository, under the player's rules, and this one picks it up by
-moving its tag in `main/idf_component.yml`.
+moving its tag in `components/lothesome_abi/idf_component.yml`.
+
+**The analyzer is an ELF, and `components/lothesome_abi/exports.txt` is
+its ABI** (0037). A new call from analyzer.c into anything outside it
+fails the build until the symbol is added there, and adding one means a
+launcher built against the old list cannot load the new ELF -- say so
+in the patch. So does moving a feckless tag. analyzer.c is built in
+`elf/`; `main/standalone.c` is the .bin's app_main and only loads it.
 
 **Nothing over a few hundred bytes goes on a task stack.** The capture
 and FFT buffers are statics in `analyzer.c` for that reason; keep any

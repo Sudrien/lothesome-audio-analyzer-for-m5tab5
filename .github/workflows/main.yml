@@ -84,6 +84,10 @@ jobs:
           idf.py merge-bin
           mv build/merged-binary.bin build/lothesome_${{ steps.ver.outputs.name }}_audio_analyzer_for_m5tab5_standalone.bin
           mv build/lothesome_audio_analyzer_for_m5tab5.bin build/lothesome_${{ steps.ver.outputs.name }}_audio_analyzer_for_m5tab5.bin
+          # 0037: the analyzer alone, for esp_elf, and the symbols a host
+          # must export for it. The .bins above already contain this ELF.
+          cp build/elf/lothesome_analyzer.app.elf build/lothesome_${{ steps.ver.outputs.name }}_audio_analyzer_for_m5tab5.elf
+          cp components/lothesome_abi/exports.txt build/lothesome_${{ steps.ver.outputs.name }}_audio_analyzer_for_m5tab5_exports.txt
 
       # 0035: a signed record that these two files, by their SHA-256,
       # were built by this workflow from this commit. It is stored with
@@ -97,6 +101,8 @@ jobs:
           subject-path: |
             build/lothesome_${{ steps.ver.outputs.name }}_audio_analyzer_for_m5tab5_standalone.bin
             build/lothesome_${{ steps.ver.outputs.name }}_audio_analyzer_for_m5tab5.bin
+            build/lothesome_${{ steps.ver.outputs.name }}_audio_analyzer_for_m5tab5.elf
+            build/lothesome_${{ steps.ver.outputs.name }}_audio_analyzer_for_m5tab5_exports.txt
 
       - name: Archive build output artifacts
         uses: actions/upload-artifact@v4
@@ -105,6 +111,8 @@ jobs:
           path: |
             build/lothesome_${{ steps.ver.outputs.name }}_audio_analyzer_for_m5tab5_standalone.bin
             build/lothesome_${{ steps.ver.outputs.name }}_audio_analyzer_for_m5tab5.bin
+            build/lothesome_${{ steps.ver.outputs.name }}_audio_analyzer_for_m5tab5.elf
+            build/lothesome_${{ steps.ver.outputs.name }}_audio_analyzer_for_m5tab5_exports.txt
 
       # 6031: an IDF 6 build writes its own lock (see CMakeLists.txt) and
       # this is the only place one gets made from the registry. Upload it
@@ -135,3 +143,5 @@ jobs:
           files: |
             build/lothesome_${{ steps.ver.outputs.name }}_audio_analyzer_for_m5tab5_standalone.bin
             build/lothesome_${{ steps.ver.outputs.name }}_audio_analyzer_for_m5tab5.bin
+            build/lothesome_${{ steps.ver.outputs.name }}_audio_analyzer_for_m5tab5.elf
+            build/lothesome_${{ steps.ver.outputs.name }}_audio_analyzer_for_m5tab5_exports.txt
