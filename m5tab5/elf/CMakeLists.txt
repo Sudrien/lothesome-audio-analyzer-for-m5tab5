@@ -40,6 +40,14 @@ set(SDKCONFIG_DEFAULTS "${CMAKE_CURRENT_LIST_DIR}/../sdkconfig.defaults"
 set(EXTRA_COMPONENT_DIRS "${CMAKE_CURRENT_LIST_DIR}/../main")
 set(COMPONENTS main)
 
+# 0046: the .bin's version, which CI takes from the release tag
+# (version.txt beside the .bin's CMakeLists.txt, not here), so the ELF's
+# own esp_app_desc_t -- feckless-abi v0.2.5 links it in -- says the same.
+# On its own, IDF's usual: git describe.
+if(LOTHESOME_PROJECT_VER)
+    set(PROJECT_VER "${LOTHESOME_PROJECT_VER}")
+endif()
+
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 
 # Tells main/CMakeLists.txt which of its two builds this is.

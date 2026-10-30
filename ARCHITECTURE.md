@@ -1019,3 +1019,16 @@ named relocations are now its 86 imports and nothing else.
 
 Built in m5tab5/ with ESP-IDF 6.1, component manager off: 50,760 bytes,
 86 symbols, all in the ABI. Not on a Tab5.
+
+### 0046 -- the ELF's own description
+
+*0045 on a Tab5*: the analyzer ran from the card under Duplicitous, at
+40 fps. Its `===` line gave Duplicitous's version and build time: under
+a launcher esp_app_get_description() was the launcher's. feckless-abi
+v0.2.5 links esp_app_format into the ELF, so the call is the ELF's own;
+and `elf/` now builds with the .bin's PROJECT_VER, passed in by
+main/CMakeLists.txt, so a release's ELF says the release's tag where
+before it would have said git describe. Built with ESP-IDF 6.1
+(component manager off) and a version.txt of v9.9.9-test: the ELF holds
+"v9.9.9-test" and "lothesome_analyzer", and imports 85 symbols,
+esp_app_get_description no longer one. Not on a Tab5.

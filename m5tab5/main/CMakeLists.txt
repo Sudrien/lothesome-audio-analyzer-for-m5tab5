@@ -26,6 +26,7 @@ if(NOT CMAKE_BUILD_EARLY_EXPANSION)
     idf_build_get_property(_build_dir BUILD_DIR)
     idf_build_get_property(_sdkconfig SDKCONFIG)
     idf_build_get_property(_project_dir PROJECT_DIR)
+    idf_build_get_property(_project_ver PROJECT_VER)
 
     set(_elf_dir "${_build_dir}/elf")
     set(_elf "${_elf_dir}/lothesome_analyzer.app.elf")
@@ -37,6 +38,7 @@ if(NOT CMAKE_BUILD_EARLY_EXPANSION)
                    -DIDF_TARGET=${_target}
                    -DSDKCONFIG=${_elf_dir}/sdkconfig
                    -DLOTHESOME_HOST_SDKCONFIG=${_sdkconfig}
+                   -DLOTHESOME_PROJECT_VER=${_project_ver}   # 0046
         CMAKE_GENERATOR "Unix Makefiles"
         BUILD_COMMAND make elf
         BUILD_ALWAYS 1
