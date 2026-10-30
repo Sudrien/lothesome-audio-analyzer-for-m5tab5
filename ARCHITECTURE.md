@@ -1004,3 +1004,18 @@ A checkout's own `build/`, `sdkconfig` and `managed_components/` at the
 top are stale after this: delete them, and build in `m5tab5/`. Built
 there with ESP-IDF 6.1 (component manager off), and `make -C
 m5tab5/test` passes. Not on a Tab5.
+
+### 0045 -- feckless ABI v0.2.4: -Bsymbolic
+
+0043 was wrong about the cause. On a Tab5 under Duplicitous 0026, a good
+build of this ELF -- esp-dsp linked in, the check passed -- was refused
+on `Can't find common dsps_fft2r_fc32_arp4_`. esp-dsp's assembly defines
+that entry point global with default visibility; in a shared object the
+FFT reached it through the PLT by name, and elf_loader 2.0.0 looks every
+named relocation up in the launcher's table, even one the ELF defines.
+feckless-abi v0.2.4 links with -Bsymbolic, so the ELF binds its own
+symbols to itself, and its check reads the relocations too. The ELF's
+named relocations are now its 86 imports and nothing else.
+
+Built in m5tab5/ with ESP-IDF 6.1, component manager off: 50,760 bytes,
+86 symbols, all in the ABI. Not on a Tab5.
