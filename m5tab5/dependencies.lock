@@ -199,6 +199,6 @@ direct_dependencies:
 - espressif/esp-dsp
 - feckless_abi
 - idf
-manifest_hash: 1a09ab2f7540cd6d4059ed359a7464f12191c07016b89211549d8d22a39193be
+manifest_hash: 2b7ddad7a66265199fb9dfb3959fdbacb418075c06fd8a1f66a2620840914095
 target: esp32p4
 version: 3.0.0
