@@ -964,3 +964,13 @@ Duplicitous the analyzer's lcd_init() would have failed its
 ESP_ERROR_CHECK and restarted the Tab5. v0.2.1 names v0.2.9, which has
 it. The standalone .bin calls each init once and was not affected. Not
 built.
+
+### 0042 -- feckless ABI v0.2.2
+
+On a Tab5 under Duplicitous, this ELF was found and refused:
+`E ELF: Can't find common feckless_abi_v1`. feckless-abi's table
+registered the version symbol under the name "FECKLESS_ABI_SYMBOL", so
+no app could load -- this .bin's own embedded copy neither. v0.2.2
+registers it as feckless_abi_v1. Built with v0.2.2 from a local copy
+(IDF 5.5.1, component manager off): the .bin now holds that name and
+not the other. Not on a Tab5.
