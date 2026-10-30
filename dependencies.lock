@@ -146,7 +146,7 @@ dependencies:
     - linux
     version: 1.5.0
   feckless_abi:
-    component_hash: 1a61759f604e23b88f7bd197628b37d6f27669f7b780b5b9b109eed69d6cb9f9
+    component_hash: 46d80e94726f193b2ca384e8b8b08a3afbabb0a7531007bcad857448275ae606
     dependencies:
     - name: idf
       version: '>=5.4.2'
@@ -164,7 +164,7 @@ dependencies:
       git: https://github.com/Sudrien/feckless-abi-for-m5tab5.git
       path: .
       type: git
-    version: 3126b6824c293ed935a41dd29278d9d8d67dd60a
+    version: ac0debd1a04f35cbeeb45113b196a08a65d263f2
   feckless_drivers:
     component_hash: dba8377caed308148ac32b8f9c1d7eb3d081be4e437da71785a21256d29adbf3
     dependencies:
@@ -199,6 +199,6 @@ direct_dependencies:
 - espressif/esp-dsp
 - feckless_abi
 - idf
-manifest_hash: 9569267b869a820f0c63cbaf0ed7971db2f6a082ab1056d2a2b04bf3037a5d7c
+manifest_hash: 1a09ab2f7540cd6d4059ed359a7464f12191c07016b89211549d8d22a39193be
 target: esp32p4
 version: 3.0.0
