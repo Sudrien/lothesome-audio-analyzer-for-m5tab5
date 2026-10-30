@@ -2,5 +2,5 @@ build/
 managed_components/
 sdkconfig
 sdkconfig.old
-test/spectrumtest
-test/menutest
+m5tab5/test/spectrumtest
+m5tab5/test/menutest

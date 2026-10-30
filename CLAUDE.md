@@ -8,6 +8,11 @@ in doubt, that repository's CLAUDE.md is the longer version.
 
 **Read this file before writing a patch, not after.**
 
+**The firmware is in `m5tab5/`** (0044), as in Duplicitous: its
+CMakeLists.txt, `main/`, `elf/`, `cmake/`, `test/`, the lock, the
+partition table and sdkconfig.defaults. Paths below are relative to it,
+and so is `idf.py`. `original/` and `docs/` stay at the top.
+
 Claude creates `git am`-able patches authored as
 `Claude <noreply@anthropic.com>`, and presents each as soon as it
 exists, since a session can end before the next one does.

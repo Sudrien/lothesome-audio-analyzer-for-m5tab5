@@ -986,3 +986,21 @@ ESP-IDF 6.1 (component manager off): with esp-dsp kept out, the build
 fails naming the four dsps_ symbols and leaves no ELF; as it is, the
 ELF is 50,756 bytes and its 86 symbols are all in the ABI. Not on a
 Tab5.
+
+### 0044 -- the firmware in m5tab5/
+
+As Duplicitous has it: the project -- CMakeLists.txt, `main/`, `elf/`,
+`cmake/`, `test/`, `dependencies.lock`, `partitions.csv` and
+`sdkconfig.defaults` -- moved, unchanged, into `m5tab5/`. Their paths to
+each other are relative (`../main`, `../../cmake`), so none changed.
+The workflow's run steps start in `m5tab5/` (`defaults:
+working-directory`), and its uses: steps' paths start with `m5tab5/`;
+the release files are named as before. `.gitignore` follows the two
+test binaries; its other patterns match at any depth. `original/` and
+`docs/` stay at the top, and CLAUDE.md says paths in it are relative to
+`m5tab5/`. Earlier entries keep the paths they had.
+
+A checkout's own `build/`, `sdkconfig` and `managed_components/` at the
+top are stale after this: delete them, and build in `m5tab5/`. Built
+there with ESP-IDF 6.1 (component manager off), and `make -C
+m5tab5/test` passes. Not on a Tab5.

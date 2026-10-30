@@ -10,6 +10,7 @@ source's Nyquist, a 1/3-octave RTA, a waterfall, and a sound level meter.
 Rev 2 Tabs (ST7121 panel) only. ESP-IDF 5.5 or later:
 
 ```
+cd m5tab5
 idf.py build flash monitor
 ```
 
@@ -17,7 +18,7 @@ The analyzer itself is an ELF that the firmware loads with esp_elf; the
 build makes it in `build/elf/` and embeds it. Each release also
 publishes it alone, for a launcher on the same
 [feckless ABI](https://github.com/Sudrien/feckless-abi-for-m5tab5)
-(the tag in `main/idf_component.yml`).
+(the tag in `m5tab5/main/idf_component.yml`).
 
 ## Sources
 
@@ -85,7 +86,7 @@ How it works: `ARCHITECTURE.md`.
 
 ## Development
 
-`make -C test` runs the host tests. `make -C test/render` draws each view
+`make -C m5tab5/test` runs the host tests. `make -C m5tab5/test/render` draws each view
 to a `.ppm` on a PC, and the menu and the licences page; it needs one
 `idf.py build` first, for the font, and cmake.
 
