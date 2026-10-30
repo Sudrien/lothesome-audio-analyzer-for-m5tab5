@@ -974,3 +974,15 @@ no app could load -- this .bin's own embedded copy neither. v0.2.2
 registers it as feckless_abi_v1. Built with v0.2.2 from a local copy
 (IDF 5.5.1, component manager off): the .bin now holds that name and
 not the other. Not on a Tab5.
+
+### 0043 -- feckless ABI v0.2.3
+
+On a Tab5 under Duplicitous, after 0042, the ELF was refused:
+`Can't find common dsps_fft2r_fc32_arp4_`. That ELF had no esp-dsp in
+it, and so could not have passed the ABI check; the check ran after the
+link and left a failed ELF in build/elf/, where it was copied from.
+feckless-abi v0.2.3 deletes an ELF that fails the check. Built with
+ESP-IDF 6.1 (component manager off): with esp-dsp kept out, the build
+fails naming the four dsps_ symbols and leaves no ELF; as it is, the
+ELF is 50,756 bytes and its 86 symbols are all in the ABI. Not on a
+Tab5.
