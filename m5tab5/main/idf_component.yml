@@ -2,12 +2,23 @@ dependencies:
   idf:
     version: ">=5.4.2"
 
-  # 0039: the feckless ABI -- the libraries, pinned there, and the list
-  # of what the ELF may take from a launcher. Its tag is the ABI this
-  # analyzer is built for; a launcher on the same one runs it.
+  # 0039: the feckless ABI, the list of what the ELF may take from a
+  # launcher, and the libraries it exports. 0047: all three from
+  # feckless-libs-for-m5tab5, at one tag -- feckless_abi fails the build
+  # otherwise. v0.2.0 is feckless-abi v0.2.5 and its pins unchanged: ABI
+  # v1, so a launcher on v1 runs this analyzer.
   feckless_abi:
-    git: https://github.com/Sudrien/feckless-abi-for-m5tab5.git
-    version: "v0.2.5"   # 0040: runs on a board a launcher has up; 0046: v0.2.5
+    git: https://github.com/Sudrien/feckless-libs-for-m5tab5.git
+    path: components/feckless_abi
+    version: "v0.2.0"
+  feckless_drivers:
+    git: https://github.com/Sudrien/feckless-libs-for-m5tab5.git
+    path: components/feckless_drivers
+    version: "v0.2.0"
+  feckless_graphics_handler:
+    git: https://github.com/Sudrien/feckless-libs-for-m5tab5.git
+    path: components/feckless_graphics_handler
+    version: "v0.2.0"
 
   # The FFT. Replaces arduinoFFT. Optimised for the P4 (dsps_fft2r_fc32
   # picks the arp4 assembly when it can). Its windows do not include

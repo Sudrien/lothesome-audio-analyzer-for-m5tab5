@@ -92,7 +92,8 @@ jobs:
           mv build/lothesome_audio_analyzer_for_m5tab5.bin build/lothesome_${{ steps.ver.outputs.name }}_audio_analyzer_for_m5tab5.bin
           # 0037: the analyzer alone, for esp_elf. The .bins above already
           # contain this ELF. 0039: what it may take from a launcher is
-          # feckless-abi-for-m5tab5's, at the tag in main/idf_component.yml.
+          # feckless_abi's (feckless-libs-for-m5tab5), at the tag in
+          # main/idf_component.yml.
           cp build/elf/lothesome_analyzer.app.elf build/lothesome_${{ steps.ver.outputs.name }}_audio_analyzer_for_m5tab5.elf
 
       # 0035: a signed record that these two files, by their SHA-256,

@@ -44,14 +44,14 @@ of the next build has its diff read before it is committed.
 build.** The defaults only fill keys an existing sdkconfig lacks.
 
 **The board, the microphones and the panel are not in this
-repository.** They are feckless-drivers-for-m5tab5 and
-feckless-graphics-handler-for-m5tab5. A change to them is a patch against
-that repository, under the player's rules. The libraries are pinned in
-feckless-abi-for-m5tab5, and this one picks a change up by moving that
-repository's tag in `main/idf_component.yml`.
+repository.** They are `feckless_drivers` and `feckless_graphics_handler`
+in feckless-libs-for-m5tab5. A change to them is a patch against that
+repository, under its rules. This one picks a change up by moving the
+tag in `main/idf_component.yml` -- the same tag for all three feckless
+components, which feckless_abi checks.
 
 **The analyzer is an ELF built against the feckless ABI** (0037, 0039),
-which is feckless-abi-for-m5tab5's `exports.txt`. A call from
+which is feckless_abi's `exports.txt` in feckless-libs-for-m5tab5. A call from
 analyzer.c to anything outside it fails the build: link it into the ELF
 (`ELF_COMPONENTS` in `elf/CMakeLists.txt`, as esp-dsp is), or it is a
 patch against that repository first. analyzer.c is built in `elf/`;

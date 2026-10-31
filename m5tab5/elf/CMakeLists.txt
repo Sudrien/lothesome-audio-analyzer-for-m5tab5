@@ -1,7 +1,8 @@
 # 0037: the analyzer as an ELF for esp_elf -- main/analyzer.c, the same
 # file the .bin runs, linked position-independent with every library
 # call left undefined but esp-dsp's, which is linked in. The rest is
-# the feckless ABI's (feckless-abi-for-m5tab5, 0039), and the build
+# the feckless ABI's (feckless_abi from feckless-libs-for-m5tab5, 0039,
+# 0047), and the build
 # checks the ELF against it.
 #
 # The top-level build runs this one (main/CMakeLists.txt) and embeds

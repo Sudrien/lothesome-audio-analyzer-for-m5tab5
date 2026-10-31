@@ -1032,3 +1032,19 @@ before it would have said git describe. Built with ESP-IDF 6.1
 (component manager off) and a version.txt of v9.9.9-test: the ELF holds
 "v9.9.9-test" and "lothesome_analyzer", and imports 85 symbols,
 esp_app_get_description no longer one. Not on a Tab5.
+
+### 0047 -- the feckless libraries from feckless-libs-for-m5tab5 v0.2.0
+
+The four feckless repositories became components of one,
+feckless-libs-for-m5tab5, released together under one tag. The manifest
+names feckless_abi, feckless_drivers and feckless_graphics_handler
+there, each by `path:`, all at v0.2.0, in place of feckless-abi v0.2.5,
+which pinned the other two itself; feckless_abi fails the build if they
+are at another tag than its own. v0.2.0 is those tags' code unchanged,
+so the ELF is still ABI v1 and runs on Duplicitous as before. The
+README, CLAUDE.md, elf/CMakeLists.txt's and the workflow's comments name
+the new repository. Built with ESP-IDF release/v6.1 (9a97f6c) and the
+component manager off, against feckless-libs v0.2.0 (2edea9f): the ELF
+checked against the ABI, `feckless_abi: 85 symbols, all in
+feckless_abi_v1`, as 0046's; the .bin 0x108d70 bytes.
+`dependencies.lock` not updated. Not on a Tab5.

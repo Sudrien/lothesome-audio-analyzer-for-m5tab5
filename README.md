@@ -17,7 +17,7 @@ idf.py build flash monitor
 The analyzer itself is an ELF that the firmware loads with esp_elf; the
 build makes it in `build/elf/` and embeds it. Each release also
 publishes it alone, for a launcher on the same
-[feckless ABI](https://github.com/Sudrien/feckless-abi-for-m5tab5)
+[feckless ABI](https://github.com/Sudrien/feckless-libs-for-m5tab5/tree/main/components/feckless_abi)
 (the tag in `m5tab5/main/idf_component.yml`).
 
 ## Sources
@@ -79,8 +79,8 @@ of the [original project](https://github.com/Sudrien/m5tab5_spectrum_analyzer)).
 A C port of
 [m5tab5_spectrum_analyzer](https://github.com/Sudrien/m5tab5_spectrum_analyzer)
 (kept in `original/`), built on
-[feckless-drivers](https://github.com/Sudrien/feckless-drivers-for-m5tab5),
-[feckless-graphics-handler](https://github.com/Sudrien/feckless-graphics-handler-for-m5tab5)
+the feckless drivers and graphics handler from
+[feckless-libs-for-m5tab5](https://github.com/Sudrien/feckless-libs-for-m5tab5)
 and [esp-dsp](https://components.espressif.com/components/espressif/esp-dsp).
 How it works: `ARCHITECTURE.md`.
 
