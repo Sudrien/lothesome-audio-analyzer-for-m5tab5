@@ -6,19 +6,27 @@ dependencies:
   # launcher, and the libraries it exports. 0047: all three from
   # feckless-libs-for-m5tab5, at one tag -- feckless_abi fails the build
   # otherwise. v0.2.0 is feckless-abi v0.2.5 and its pins unchanged: ABI
-  # v1, so a launcher on v1 runs this analyzer.
+  # v1, so a launcher on v1 runs this analyzer. 0048: v0.3.0, and with
+  # it usb_host_uac -- the USB microphones' class driver, with the Tab5's
+  # fixes -- which the drivers pinned from the registry until v0.2.0 and
+  # the project names now. No ABI section: the ELF uses the core list
+  # only, and runs on any launcher on v1.
   feckless_abi:
     git: https://github.com/Sudrien/feckless-libs-for-m5tab5.git
     path: components/feckless_abi
-    version: "v0.2.0"
+    version: "v0.3.0"
   feckless_drivers:
     git: https://github.com/Sudrien/feckless-libs-for-m5tab5.git
     path: components/feckless_drivers
-    version: "v0.2.0"
+    version: "v0.3.0"
   feckless_graphics_handler:
     git: https://github.com/Sudrien/feckless-libs-for-m5tab5.git
     path: components/feckless_graphics_handler
-    version: "v0.2.0"
+    version: "v0.3.0"
+  usb_host_uac:
+    git: https://github.com/Sudrien/feckless-libs-for-m5tab5.git
+    path: components/usb_host_uac
+    version: "v0.3.0"
 
   # The FFT. Replaces arduinoFFT. Optimised for the P4 (dsps_fft2r_fc32
   # picks the arp4 assembly when it can). Its windows do not include

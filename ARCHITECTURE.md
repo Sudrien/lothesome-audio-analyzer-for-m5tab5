@@ -1048,3 +1048,17 @@ component manager off, against feckless-libs v0.2.0 (2edea9f): the ELF
 checked against the ABI, `feckless_abi: 85 symbols, all in
 feckless_abi_v1`, as 0046's; the .bin 0x108d70 bytes.
 `dependencies.lock` not updated. Not on a Tab5.
+
+### 0048 -- feckless-libs v0.3.0, and usb_host_uac from it
+
+The manifest's three feckless components move to v0.3.0, and
+usb_host_uac joins them: until v0.2.0 the drivers pinned the
+registry's 1.5.0; since v0.3.0 the project names feckless-libs' copy,
+the same 1.5.0 with the Tab5's fixes -- a stream stopped only once, its
+rings in PSRAM and freed as made -- which is what the USB microphones
+go through. The drivers warn at configure time about any other. No
+storage section: the ELF still takes from the core list only.
+Built with ESP-IDF release/v6.1 and the component manager off, against
+feckless-libs v0.3.0: no warnings, `feckless_abi: 85 symbols, all in
+feckless_abi_v1`, the .bin 0x109110 bytes. `dependencies.lock` not
+updated. Not on a Tab5.
