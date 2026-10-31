@@ -1062,3 +1062,10 @@ Built with ESP-IDF release/v6.1 and the component manager off, against
 feckless-libs v0.3.0: no warnings, `feckless_abi: 85 symbols, all in
 feckless_abi_v1`, the .bin 0x109110 bytes. `dependencies.lock` not
 updated. Not on a Tab5.
+
+### 0049 -- Avoidant, as the launcher is called now
+
+Duplicitous, the launcher this analyzer's ELF runs under, is Avoidant
+(avoidant-launcher-for-m5tab5, its 0032). CLAUDE.md and a comment in
+the workflow said the old name; the entries above keep it. Nothing
+changes for the ELF: Avoidant runs ABI v1 as Duplicitous did.

@@ -8,7 +8,7 @@ in doubt, that repository's CLAUDE.md is the longer version.
 
 **Read this file before writing a patch, not after.**
 
-**The firmware is in `m5tab5/`** (0044), as in Duplicitous: its
+**The firmware is in `m5tab5/`** (0044), as in Avoidant: its
 CMakeLists.txt, `main/`, `elf/`, `cmake/`, `test/`, the lock, the
 partition table and sdkconfig.defaults. Paths below are relative to it,
 and so is `idf.py`. `original/` and `docs/` stay at the top.

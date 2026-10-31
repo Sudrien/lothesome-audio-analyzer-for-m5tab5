@@ -43,7 +43,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    # 0044: the firmware is in m5tab5/, as in Duplicitous, so every run
+    # 0044: the firmware is in m5tab5/, as in Avoidant, so every run
     # step starts there. A uses: step does not take this, so their paths
     # start at m5tab5/.
     defaults:
