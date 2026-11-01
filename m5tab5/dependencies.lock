@@ -118,7 +118,7 @@ dependencies:
     - linux
     version: 1.6.0
   feckless_abi:
-    component_hash: 7c5e3c7031ec5463f9c4d9681a1afeeda061a4fe411084c2f0b107422a7fc435
+    component_hash: 7fcfacf9fee073a1ad096898cb75268f321246142df0241ef381bec89da62791
     dependencies:
     - name: idf
       version: '>=5.4.2'
@@ -128,9 +128,9 @@ dependencies:
       git: https://github.com/Sudrien/feckless-libs-for-m5tab5.git
       path: components/feckless_abi
       type: git
-    version: 9806e2198eab0717d3065ad80fd6d79abda6f825
+    version: 6b65a014db89a4a5a4e8c91876bc97ff063703e8
   feckless_drivers:
-    component_hash: a7fe273ba0d7518df6ed91798a267549ce8a5aef7fad6b288b1399c1d3e4f761
+    component_hash: 054de283224b85db47eaf880f29235fb05b693ff855f9b4640350e6ff65fcaf9
     dependencies:
     - name: idf
       version: '>=5.4.2'
@@ -142,9 +142,9 @@ dependencies:
       git: https://github.com/Sudrien/feckless-libs-for-m5tab5.git
       path: components/feckless_drivers
       type: git
-    version: 9806e2198eab0717d3065ad80fd6d79abda6f825
+    version: 6b65a014db89a4a5a4e8c91876bc97ff063703e8
   feckless_graphics_handler:
-    component_hash: f1d68363ea2fdc4324099b88fa247a472c6e97c4d407422d74e8acb3f575ff66
+    component_hash: b972fa9cfd0457e4b02040ad029c4308f758ba816022cde7cfc2ff411c15e693
     dependencies:
     - name: idf
       version: '>=5.4.2'
@@ -154,13 +154,23 @@ dependencies:
       git: https://github.com/Sudrien/feckless-libs-for-m5tab5.git
       path: components/feckless_graphics_handler
       type: git
-    version: 9806e2198eab0717d3065ad80fd6d79abda6f825
+    version: 6b65a014db89a4a5a4e8c91876bc97ff063703e8
+  feckless_libversions:
+    component_hash: adfbf90e8838bd5abc1d51d557050add2990e7e77102834ae576e5503ae44c38
+    dependencies:
+    - name: idf
+      version: '>=5.4.2'
+    source:
+      git: https://github.com/Sudrien/feckless-libs-for-m5tab5.git
+      path: components/feckless_libversions
+      type: git
+    version: 6b65a014db89a4a5a4e8c91876bc97ff063703e8
   idf:
     source:
       type: idf
     version: 6.1.0
   usb_host_uac:
-    component_hash: acac20dd5ad9b3120047a5773732a84eeda368c7cea29e979ed295e905060025
+    component_hash: 50ff1913abfb11d1fa54d02d3c5021cf6796e3eca6224711d16a459da337a358
     dependencies:
     - name: idf
       version: '>=5.0'
@@ -182,14 +192,15 @@ dependencies:
     - esp32p4
     - esp32h4
     - linux
-    version: 9806e2198eab0717d3065ad80fd6d79abda6f825
+    version: 6b65a014db89a4a5a4e8c91876bc97ff063703e8
 direct_dependencies:
 - espressif/esp-dsp
 - feckless_abi
 - feckless_drivers
 - feckless_graphics_handler
+- feckless_libversions
 - idf
 - usb_host_uac
-manifest_hash: bd1120a0b23123179028d0ef7c725c18be46bebd3971ba5351536d0c8b7e0946
+manifest_hash: 93f4262328a38b733c7c329e96ea95cb0db3c03cfd09e371d28e2463ffb85981
 target: esp32p4
 version: 3.0.0
