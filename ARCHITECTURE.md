@@ -1099,3 +1099,38 @@ not built since. *Checked:* `test/` (menutest, spectrumtest) passes;
 `test/render`, built against feckless-libs' 8012-8015 sources, draws every
 view and the licences page from the generated list, looked at. Not built
 with ESP-IDF, not on a Tab5.
+
+### 0051 -- the settings, the whole screen and scrolled, sized for the panel
+
+The menu under the gear and the licences page it opened (0036) are one
+settings screen: the whole screen, a header -- BACK, "Settings", the gear
+lit -- over a part that scrolls: the view (BARS, 1/3 OCT, FALL), the
+1/3-octave weighting (FAST, SLOW; dim and still settable outside that
+view), MON, each a label over a row of buttons, and under them the
+libraries, as 0050 had them on the licences page, with the repository.
+A finger that moves 16 px or more (`SET_SLOP`) up or down drags it; one
+that lifts without moving is a tap where it went down -- so a tap acts on
+the lift, where 0036's acted on the press. The press on the gear that
+opens the settings is let go before anything on them counts. A view
+chosen is drawn when the settings close, by BACK or the gear (`settings
+closed` in the log; `settings scrolled to <n> of <max> px` after a drag).
+The scrollbar at the right edge says where the screen is; it is not a
+handle.
+
+*Sized for the panel.* The Tab5's is 5" at 720 x 1280, about 294 px an
+inch; 0036's 42 px gear and 56 px rows were under 5 mm. The gear is 80 px
+(6.9 mm), its press zone the whole 104 px band above the graph and 60 px
+further left; the settings' buttons are 280 x 96 px (8.3 mm tall) with 36
+px labels (`BTN_SCALE`), and each press zone takes the 28 px under its
+button too (0021's lesson). With the gear wider, the fps and the tags move
+left of it (`FPS_X`), CLIP moves to the tags' line, and the meter's line
+stops short of the gear. `menu.h` has the geometry, host-tested;
+`draw_settings()` the drawing; app_main()'s loop the touch.
+
+*Checked:* `test/` -- menutest rewritten for the gear and the settings
+(46 checks: the gear's size and zone, BACK and the gear closing, every
+button at and under its edges scrolled and not, the gaps, the scroll's
+ends with 21 libraries) and spectrumtest -- passes. `test/render` (with
+0050's stub) draws the graph's screen and the settings at the top, in 1/3
+OCT and in BARS, halfway and at the end, at `-Wall -Wextra -Werror`;
+looked at. Not built with ESP-IDF, not on a Tab5.

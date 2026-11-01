@@ -1,13 +1,17 @@
 /*
- * menu.h -- 0036: the gear, its menu, and the licences page, as geometry
- * with no drawing in it, so the hit tests run on the host
- * (test/menutest.c). Landscape coordinates, LAND_W x LAND_H, as the rest
- * of analyzer.c's layout.
+ * menu.h -- the gear and the settings screen, as geometry with no
+ * drawing in it, so the hit tests run on the host (test/menutest.c).
+ * Landscape coordinates, LAND_W x LAND_H, as the rest of analyzer.c's
+ * layout.
  *
- * Before 0036 the view buttons (BARS, 1/3 OCT, FALL), FAST/SLOW and MON
- * sat along the top right all the time. They are behind the gear now,
- * with LICENCES under them: a list of what the firmware is built from,
- * which there was nowhere to put while every control was on the graph.
+ * 0036 put the view buttons (BARS, 1/3 OCT, FALL), FAST/SLOW and MON in
+ * a menu hung under a gear, with LICENCES opening a page of its own.
+ * 0051: one settings screen in their place, the whole screen and
+ * scrolled by a finger -- the controls first, then the libraries
+ * underneath -- and every control sized for the panel. The Tab5's is 5"
+ * at 720 x 1280, about 294 px an inch: 0036's 42 px gear and 56 px rows
+ * were under 5 mm, smaller than a fingertip. Buttons here are 96 px
+ * (8.3 mm) tall and 36 px text, as the other Tab5 apps' keys are.
  *
  * Every press zone reaches further down than what is drawn, because on
  * the board fingers landed 1 to 80 px BELOW the buttons they were aimed
@@ -19,108 +23,108 @@
 
 #include <stdbool.h>
 
-/* ---- the gear: top right, where the view buttons began ---- */
+/* ---- the gear, on the graph's screen: top right ---- */
 
-/* src: 0015's MODE_Y and MODE_H, 6 and 36, with the gear square at the
- * old buttons' height plus 6: 42 px is a fingertip, 36 was not quite. */
-#define MENU_GEAR_W         (42)
+/* 0051: 80 px, 6.9 mm, in the 104 px band above the graph (set_geometry()'s
+ * s_top). Its press zone is that whole band's height and reaches 60 px
+ * further left. */
+#define MENU_GEAR_W         (80)
 #define MENU_GEAR_Y         (6)
 #define MENU_GEAR_X(lw)     ((lw) - 10 - MENU_GEAR_W)
-/* src: 0021's MODE_HIT_Y1, 66, and 30 px left of the gear: the empty
- * band above the graph takes the misses. */
-#define MENU_GEAR_HIT_Y1    (66)
-#define MENU_GEAR_HIT_PAD   (30)
+#define MENU_GEAR_HIT_Y1    (104)
+#define MENU_GEAR_HIT_PAD   (60)
 
 static inline bool menu_gear_hit(int x, int y, int lw)
 {
     return y >= 0 && y < MENU_GEAR_HIT_Y1 && x >= MENU_GEAR_X(lw) - MENU_GEAR_HIT_PAD && x < lw;
 }
 
-/* ---- the menu: a panel hung under the gear ---- */
+/* ---- the settings screen ---- */
 
-/* src: 0016's MODE_W, 112, three to a row: "1/3 OCT" is 98 px of Ark12
- * at LABEL_SCALE, with room either side. */
-#define MENU_SEG_W          (112)
-#define MENU_PAD            (12)
-#define MENU_W              (3 * MENU_SEG_W + 2 * MENU_PAD)        /* 360 */
-/* src: 0021: a row as tall as a fingertip lands, not as tall as text. */
-#define MENU_ROW_H          (64)
-#define MENU_ROWS           (4)     /* view, weighting, MON, LICENCES */
-#define MENU_H              (MENU_ROWS * MENU_ROW_H + 2 * MENU_PAD)
-#define MENU_X(lw)          ((lw) - 10 - MENU_W)
-#define MENU_Y              (MENU_GEAR_Y + MENU_GEAR_W + 8)      /* under the gear */
+/* The header: BACK at the left, the title, the gear lit where it was on
+ * the graph's screen. Either closes the settings. */
+#define SET_HEAD_H          (112)
+#define SET_BACK_X          (10)
+#define SET_BACK_Y          (8)
+#define SET_BACK_W          (220)
+#define SET_BACK_H          (96)
 
-typedef enum {
-    MENU_HIT_OUTSIDE = 0,   /* closes it */
-    MENU_HIT_NOTHING,       /* the panel's edge, between rows */
-    MENU_HIT_BARS,          /* row 0, in view_mode_t's order */
-    MENU_HIT_OCT,
-    MENU_HIT_FALL,
-    MENU_HIT_FAST,          /* row 1: the 1/3-octave weighting */
-    MENU_HIT_SLOW,
-    MENU_HIT_MON,           /* row 2 */
-    MENU_HIT_LICENCES,      /* row 3 */
-} menu_hit_t;
-
-/* Row r's top, and segment s's left edge (rows 0 and 1 are segmented:
- * three for the views, the first two of three for FAST and SLOW). */
-static inline int menu_row_y(int r) { return MENU_Y + MENU_PAD + r * MENU_ROW_H; }
-static inline int menu_seg_x(int s, int lw) { return MENU_X(lw) + MENU_PAD + s * MENU_SEG_W; }
-
-/* What a press at (x, y) hits with the menu open. The gear itself is
- * OUTSIDE, so a second press on it closes the menu. */
-static inline menu_hit_t menu_at(int x, int y, int lw)
-{
-    const int x0 = MENU_X(lw), y0 = MENU_Y;
-    if (x < x0 || x >= x0 + MENU_W || y < y0 || y >= y0 + MENU_H) return MENU_HIT_OUTSIDE;
-    const int ix = x - (x0 + MENU_PAD), iy = y - (y0 + MENU_PAD);
-    if (iy < 0 || iy >= MENU_ROWS * MENU_ROW_H) return MENU_HIT_NOTHING;
-    const int row = iy / MENU_ROW_H;
-    int seg = ix < 0 ? 0 : ix / MENU_SEG_W;          /* the pads count as the nearest */
-    if (seg > 2) seg = 2;
-    switch (row) {
-    case 0:  return (menu_hit_t)(MENU_HIT_BARS + seg);
-    case 1:  return seg == 0 ? MENU_HIT_FAST : seg == 1 ? MENU_HIT_SLOW : MENU_HIT_NOTHING;
-    case 2:  return MENU_HIT_MON;
-    default: return MENU_HIT_LICENCES;
-    }
-}
-
-/* ---- the licences page: the whole screen ---- */
-
-#define LIC_HEAD_H          (70)     /* the title and the repository */
-#define LIC_FOOT_H          (70)     /* close, the page count, up, down */
-#define LIC_BTN_W           (112)    /* MENU_SEG_W, so they read as the same buttons */
-#define LIC_BTN_H           (44)
-#define LIC_MARGIN          (10)     /* draw_static()'s title inset */
-
-/* Lines on one page at line_h px a line; at least one. */
-static inline int lic_rows(int lh, int line_h)
-{
-    const int rows = line_h > 0 ? (lh - LIC_HEAD_H - LIC_FOOT_H) / line_h : 0;
-    return rows < 1 ? 1 : rows;
-}
-
-/* The footer's buttons: close at the left, up and down at the right. */
-static inline int lic_btn_y(int lh)   { return lh - LIC_FOOT_H + (LIC_FOOT_H - LIC_BTN_H) / 2; }
-static inline int lic_close_x(void)   { return LIC_MARGIN; }
-static inline int lic_up_x(int lw)    { return lw - LIC_MARGIN - 2 * LIC_BTN_W - MENU_PAD; }
-static inline int lic_down_x(int lw)  { return lw - LIC_MARGIN - LIC_BTN_W; }
+/* The scrolled part, under the header. A section is a label, a row of
+ * buttons, and a gap; the libraries follow the last. */
+#define SET_LEFT            (40)
+#define SET_LABEL_H         (52)        /* the section's name, LABEL_SCALE */
+#define SET_BTN_W           (280)
+#define SET_BTN_H           (96)
+#define SET_BTN_GAP         (16)        /* between buttons in a row */
+#define SET_GAP             (28)        /* under a row: the press zone's reach */
+#define SET_SECTIONS        (3)         /* view, 1/3-octave weighting, monitor */
+#define SET_SECTION_H       (SET_LABEL_H + SET_BTN_H + SET_GAP)
+#define SET_LIBS_HEAD_H     (64)        /* a rule, "Libraries", the repository */
+#define SET_SCROLL_W        (10)        /* where the screen is, at the right edge */
+#define SET_SLOP            (16)        /* a finger moving this far drags, not taps */
 
 typedef enum {
-    LIC_HIT_CLOSE = 0,      /* anywhere that is not up or down */
-    LIC_HIT_UP,
-    LIC_HIT_DOWN,
-} lic_hit_t;
+    SET_HIT_NOTHING = 0,
+    SET_HIT_CLOSE,          /* BACK, or the gear */
+    SET_HIT_BARS,           /* section 0, in view_mode_t's order */
+    SET_HIT_OCT,
+    SET_HIT_FALL,
+    SET_HIT_FAST,           /* section 1: the 1/3-octave weighting */
+    SET_HIT_SLOW,
+    SET_HIT_MON,            /* section 2: one button, two wide */
+} set_hit_t;
 
-/* A press on the page. Up and down take the footer's whole height and
- * the gap between them; anything else closes, since the page is the
- * whole screen and has no outside to tap. */
-static inline lic_hit_t lic_at(int x, int y, int lw, int lh)
+/* Section s's buttons' top, and button b's left edge, from the top of the
+ * scrolled part. */
+static inline int set_btn_y(int s) { return s * SET_SECTION_H + SET_LABEL_H; }
+static inline int set_btn_x(int b) { return SET_LEFT + b * (SET_BTN_W + SET_BTN_GAP); }
+
+/* Where the libraries' heading starts, and how tall the whole scrolled
+ * part is with n of them at line_h a line. */
+static inline int set_libs_y(void) { return SET_SECTIONS * SET_SECTION_H; }
+static inline int set_content_h(int n, int line_h)
 {
-    if (y >= lh - LIC_FOOT_H) {
-        if (x >= lic_down_x(lw) - MENU_PAD / 2) return LIC_HIT_DOWN;
-        if (x >= lic_up_x(lw) - MENU_PAD) return LIC_HIT_UP;
+    return set_libs_y() + SET_LIBS_HEAD_H + n * line_h + SET_GAP;
+}
+
+/* The furthest the scrolled part can move up, for a screen lh tall. */
+static inline int set_max_scroll(int n, int line_h, int lh)
+{
+    const int view = lh - SET_HEAD_H, m = set_content_h(n, line_h) - view;
+    return m > 0 ? m : 0;
+}
+
+static inline int set_clamp_scroll(int scroll, int n, int line_h, int lh)
+{
+    const int m = set_max_scroll(n, line_h, lh);
+    return scroll < 0 ? 0 : scroll > m ? m : scroll;
+}
+
+/* What a tap at (x, y) on the screen hits, scrolled by `scroll`. A button
+ * takes its row's whole width to the next one's start and the gap under
+ * it; the gaps between buttons go to the nearer. */
+static inline set_hit_t set_at(int x, int y, int scroll, int lw)
+{
+    if (y < SET_HEAD_H) {
+        if (x < SET_BACK_X + SET_BACK_W + 20) return SET_HIT_CLOSE;
+        if (menu_gear_hit(x, y, lw)) return SET_HIT_CLOSE;
+        return SET_HIT_NOTHING;
     }
-    return LIC_HIT_CLOSE;
+    const int cy = y - SET_HEAD_H + scroll;
+    if (cy >= set_libs_y()) return SET_HIT_NOTHING;
+    const int s = cy / SET_SECTION_H, in = cy - s * SET_SECTION_H;
+    if (in < SET_LABEL_H) return SET_HIT_NOTHING;
+    int b = (x - SET_LEFT + SET_BTN_GAP / 2) / (SET_BTN_W + SET_BTN_GAP);
+    if (x < SET_LEFT - SET_BTN_GAP) return SET_HIT_NOTHING;
+    if (b < 0) b = 0;
+    switch (s) {
+    case 0:
+        if (b > 2) return x < set_btn_x(2) + SET_BTN_W + SET_BTN_GAP ? SET_HIT_FALL : SET_HIT_NOTHING;
+        return (set_hit_t)(SET_HIT_BARS + b);
+    case 1:
+        if (b > 1) return x < set_btn_x(1) + SET_BTN_W + SET_BTN_GAP ? SET_HIT_SLOW : SET_HIT_NOTHING;
+        return b == 0 ? SET_HIT_FAST : SET_HIT_SLOW;
+    default:
+        return x < set_btn_x(1) + SET_BTN_W + SET_BTN_GAP ? SET_HIT_MON : SET_HIT_NOTHING;
+    }
 }

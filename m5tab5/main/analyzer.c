@@ -341,7 +341,7 @@ static void set_geometry(void)
     s_wf_qn = 0;                /* 0025 */
 }
 
-/* 0036: the gear and the tags, top right; menu.h, draw_menu() below. */
+/* 0036: the gear and the tags, top right; menu.h, and 0051's settings below. */
 static void draw_top_right(void);
 
 /* 0015: the waterfall's time labels and its colour key. */
@@ -526,22 +526,30 @@ static bool mon_possible(int src)
     return src == SRC_JACK || (src == SRC_USB && uac_present());
 }
 
-/* ---- 0036: the gear, its menu, and the licences page ---- */
+/* ---- 0036: the gear; 0051: the settings screen behind it ---- */
 
-static bool s_menu;             /* the menu is open */
-static bool s_lic;              /* the licences page is open */
-static int  s_lic_scroll;       /* its first line on screen */
+static bool s_set;              /* 0051: the settings screen is up */
+static int  s_set_scroll;       /* how far its scrolled part has moved up, px */
 
 #define LIC_LINE            (ARK12_H * LABEL_SCALE + 10)   /* 34 px */
+#define BTN_SCALE           (3)     /* 0051: a button's label, 36 px, as TITLE_SCALE */
+
+/* 0050: entry i's column c -- module, checkout, licence. The rows are a
+ * struct now (feckless_libversions' libv_t), not three strings. */
+static const char *lic_cell(int i, int c)
+{
+    const libv_t *e = &k_libversions[i];
+    return c == 0 ? e->module : c == 1 ? e->checkout : e->licence;
+}
 
 /* A box with a COL_BASE edge, lit or not, its text centred: the look the
- * view buttons had (0015). */
-static void draw_seg(int x, int y, int w, int h, const char *t, bool lit, uint16_t ink)
+ * view buttons had (0015), at BTN_SCALE (0051). */
+static void draw_btn(int x, int y, int w, int h, const char *t, bool lit, uint16_t ink)
 {
-    const int label_h = ARK12_H * LABEL_SCALE, tw = land_text_w(t, LABEL_SCALE);
-    land_fill(x - 1, y - 1, w + 2, h + 2, COL_BASE);
+    const int label_h = ARK12_H * BTN_SCALE, tw = land_text_w(t, BTN_SCALE);
+    land_fill(x - 2, y - 2, w + 4, h + 4, COL_BASE);
     land_fill(x, y, w, h, lit ? COL_LABEL : COL_BLACK);
-    land_text(x + (w - tw) / 2, y + (h - label_h) / 2, t, LABEL_SCALE, lit ? COL_BLACK : ink);
+    land_text(x + (w - tw) / 2, y + (h - label_h) / 2, t, BTN_SCALE, lit ? COL_BLACK : ink);
 }
 
 /* A gear in MENU_GEAR_W: eight teeth round a ring, by distance and
@@ -565,10 +573,12 @@ static void draw_gear(bool open)
 }
 
 /* What is on, said where the buttons were: MON (lit when it plays, dim
- * when this source cannot be monitored) and, in 1/3 OCT, the weighting. */
+ * when this source cannot be monitored) and, in 1/3 OCT, the weighting.
+ * 0051: left of draw_fps(), which is left of the gear. */
+#define FPS_X               (MENU_GEAR_X(LAND_W) - 14 - 170)
 static void draw_tags(void)
 {
-    const int x1 = LAND_W - 170 - 14, x0 = x1 - 260;    /* left of draw_fps() */
+    const int x1 = FPS_X - 14, x0 = x1 - 260;
     land_fill(x0, TAG_Y, x1 - x0, ARK12_H * LABEL_SCALE, COL_BLACK);
     int x = x1;
     if (s_mode == MODE_OCT) {
@@ -585,56 +595,52 @@ static void draw_tags(void)
 
 static void draw_top_right(void)
 {
-    draw_gear(s_menu);
+    draw_gear(false);
     draw_tags();
 }
 
-static void draw_menu(void)
+/*
+ * 0051: the settings, the whole screen. Under a header -- BACK, the
+ * title, the gear lit -- the scrolled part: the view, the 1/3-octave
+ * weighting and MON, each a label over a row of buttons (menu.h has
+ * where), then the libraries this firmware is built from, as
+ * libversions.h has them -- module, checkout, licence -- in three columns
+ * as wide as their longest entry. The scrolled part is drawn first and
+ * the header over what runs under it; the panel clips the rest.
+ */
+static void draw_settings(void)
 {
     static const char *const names[MODE_COUNT] = { "BARS", "1/3 OCT", "FALL" };   /* 0016 */
-    const int x0 = MENU_X(LAND_W), inset = 4;
-    const int h = MENU_ROW_H - 2 * inset;
-    land_fill(x0 - 1, MENU_Y - 1, MENU_W + 2, MENU_H + 2, COL_BASE);
-    land_fill(x0, MENU_Y, MENU_W, MENU_H, COL_BLACK);
+    s_set_scroll = set_clamp_scroll(s_set_scroll, LIBVERSIONS_COUNT, LIC_LINE, LAND_H);
+    const int oy = SET_HEAD_H - s_set_scroll;          /* the scrolled part's top */
+    const int lab = (SET_LABEL_H - ARK12_H * LABEL_SCALE) / 2;
+    land_fill(0, 0, LAND_W, LAND_H, COL_BLACK);
+
+    land_text(SET_LEFT, oy + lab, "View", LABEL_SCALE, COL_LABEL);
     for (int i = 0; i < MODE_COUNT; i++)
-        draw_seg(menu_seg_x(i, LAND_W) + inset, menu_row_y(0) + inset, MENU_SEG_W - 2 * inset, h,
-                 names[i], (int)s_mode == i, COL_LABEL);
+        draw_btn(set_btn_x(i), oy + set_btn_y(0), SET_BTN_W, SET_BTN_H, names[i],
+                 (int)s_mode == i, COL_LABEL);
+
     /* The weighting is the 1/3-octave view's; dim in the others, and
      * still changed by a press, for when that view is chosen. */
     const uint16_t wink = s_mode == MODE_OCT ? COL_LABEL : COL_BASE;
-    draw_seg(menu_seg_x(0, LAND_W) + inset, menu_row_y(1) + inset, MENU_SEG_W - 2 * inset, h,
-             "FAST", !s_oct_slow && s_mode == MODE_OCT, wink);
-    draw_seg(menu_seg_x(1, LAND_W) + inset, menu_row_y(1) + inset, MENU_SEG_W - 2 * inset, h,
-             "SLOW", s_oct_slow && s_mode == MODE_OCT, wink);
-    land_text(menu_seg_x(2, LAND_W) + inset + 6, menu_row_y(1) + (MENU_ROW_H - ARK12_H * LABEL_SCALE) / 2,
-              "1/3 OCT", LABEL_SCALE, COL_BASE);
+    land_text(SET_LEFT, oy + SET_SECTION_H + lab,
+              s_mode == MODE_OCT ? "1/3-octave weighting" : "1/3-octave weighting, in 1/3 OCT",
+              LABEL_SCALE, COL_LABEL);
+    draw_btn(set_btn_x(0), oy + set_btn_y(1), SET_BTN_W, SET_BTN_H, "FAST",
+             !s_oct_slow && s_mode == MODE_OCT, wink);
+    draw_btn(set_btn_x(1), oy + set_btn_y(1), SET_BTN_W, SET_BTN_H, "SLOW",
+             s_oct_slow && s_mode == MODE_OCT, wink);
+
     const bool can = mon_possible(s_source);
-    draw_seg(x0 + MENU_PAD + inset, menu_row_y(2) + inset, MENU_W - 2 * MENU_PAD - 2 * inset, h,
+    land_text(SET_LEFT, oy + 2 * SET_SECTION_H + lab, "Monitor: a headset hears its own microphone",
+              LABEL_SCALE, COL_LABEL);
+    draw_btn(set_btn_x(0), oy + set_btn_y(2), 2 * SET_BTN_W + SET_BTN_GAP, SET_BTN_H,
              !can ? (s_mon_want ? "MON on - no headset" : "MON - no headset")
                   : (s_mon_want ? "MON on" : "MON off"),
              s_mon_want && can, can ? COL_LABEL : COL_BASE);
-    draw_seg(x0 + MENU_PAD + inset, menu_row_y(3) + inset, MENU_W - 2 * MENU_PAD - 2 * inset, h,
-             "LICENCES", false, COL_LABEL);
-    draw_gear(true);
-    land_blit(x0 - 1, LAND_W);
-}
 
-/*
- * The whole screen: what this firmware is built from, as libversions.h
- * has it -- module, checkout, licence -- in three columns as wide as
- * their longest entry. Paged by up and down if it does not fit.
- */
-/* 0050: entry i's column c -- module, checkout, licence. The rows are a
- * struct now (feckless_libversions' libv_t), not three strings. */
-static const char *lic_cell(int i, int c)
-{
-    const libv_t *e = &k_libversions[i];
-    return c == 0 ? e->module : c == 1 ? e->checkout : e->licence;
-}
-
-static void draw_licences(void)
-{
-    const int rows = lic_rows(LAND_H, LIC_LINE);
+    /* the libraries */
     static int cw[3];
     if (!cw[0]) {
         for (int i = 0; i < LIBVERSIONS_COUNT; i++)
@@ -643,32 +649,37 @@ static void draw_licences(void)
                 if (w > cw[c]) cw[c] = w;
             }
     }
-    const int gap = 40, x0 = LIC_MARGIN + 20, x1 = x0 + cw[0] + gap, x2 = x1 + cw[1] + gap;
-
-    land_fill(0, 0, LAND_W, LAND_H, COL_BLACK);
-    land_text(LIC_MARGIN, 4, "Licences", TITLE_SCALE, COL_WHITE);
-    land_text(LIC_MARGIN + land_text_w("Licences", TITLE_SCALE) + 30, 14,
-              "github.com/Sudrien/lothesome-audio-analyzer-for-m5tab5", LABEL_SCALE, COL_LABEL);
-    for (int r = 0; r < rows; r++) {
-        const int i = s_lic_scroll + r;
-        if (i >= LIBVERSIONS_COUNT) break;
-        const int y = LIC_HEAD_H + r * LIC_LINE;
+    const int gap = 40, x0 = SET_LEFT, x1 = x0 + cw[0] + gap, x2 = x1 + cw[1] + gap;
+    int y = oy + set_libs_y();
+    hline(0, y, LAND_W - SET_SCROLL_W, COL_BASE);
+    land_text(SET_LEFT, y + 20, "Libraries", LABEL_SCALE, COL_LABEL);
+    land_text(SET_LEFT + land_text_w("Libraries", LABEL_SCALE) + 30, y + 20,
+              "github.com/Sudrien/lothesome-audio-analyzer-for-m5tab5", LABEL_SCALE, COL_BASE);
+    y += SET_LIBS_HEAD_H;
+    for (int i = 0; i < LIBVERSIONS_COUNT && y < LAND_H; i++, y += LIC_LINE) {
+        if (y + LIC_LINE <= SET_HEAD_H) continue;
         land_text(x0, y, lic_cell(i, 0), LABEL_SCALE, COL_WHITE);
         land_text(x1, y, lic_cell(i, 1), LABEL_SCALE, COL_LABEL);
         land_text(x2, y, lic_cell(i, 2), LABEL_SCALE, COL_LABEL);
     }
-    const int by = lic_btn_y(LAND_H);
-    draw_seg(lic_close_x(), by, LIC_BTN_W, LIC_BTN_H, "CLOSE", false, COL_LABEL);
-    if (LIBVERSIONS_COUNT > rows) {
-        /* three ints and " of ": 36 at the most, as -Wformat-truncation counts */
-        char page[40];
-        const int last = s_lic_scroll + rows < LIBVERSIONS_COUNT ? s_lic_scroll + rows : LIBVERSIONS_COUNT;
-        snprintf(page, sizeof(page), "%d-%d of %d", s_lic_scroll + 1, last, LIBVERSIONS_COUNT);
-        land_text((LAND_W - land_text_w(page, LABEL_SCALE)) / 2, by + (LIC_BTN_H - ARK12_H * LABEL_SCALE) / 2,
-                  page, LABEL_SCALE, COL_BASE);
-        draw_seg(lic_up_x(LAND_W), by, LIC_BTN_W, LIC_BTN_H, "UP", false, COL_LABEL);
-        draw_seg(lic_down_x(LAND_W), by, LIC_BTN_W, LIC_BTN_H, "DOWN", false, COL_LABEL);
+
+    /* where the screen is in it, at the right edge */
+    const int view = LAND_H - SET_HEAD_H, total = set_content_h(LIBVERSIONS_COUNT, LIC_LINE);
+    if (total > view) {
+        const int bar = view * view / total;
+        const int by = SET_HEAD_H + (view - bar) * s_set_scroll /
+                       set_max_scroll(LIBVERSIONS_COUNT, LIC_LINE, LAND_H);
+        land_fill(LAND_W - SET_SCROLL_W, SET_HEAD_H, SET_SCROLL_W, view, COL_GRID);
+        land_fill(LAND_W - SET_SCROLL_W, by, SET_SCROLL_W, bar, COL_LABEL);
     }
+
+    /* the header, over what scrolled under it */
+    land_fill(0, 0, LAND_W, SET_HEAD_H, COL_BLACK);
+    hline(0, SET_HEAD_H - 1, LAND_W, COL_GRID);
+    draw_btn(SET_BACK_X, SET_BACK_Y, SET_BACK_W, SET_BACK_H, "BACK", false, COL_LABEL);
+    land_text(SET_BACK_X + SET_BACK_W + 40, (SET_HEAD_H - ARK12_H * TITLE_SCALE) / 2, "Settings",
+              TITLE_SCALE, COL_WHITE);
+    draw_gear(true);
     gfx_blit(0, gfx_h());
 }
 
@@ -1146,20 +1157,23 @@ static void draw_meters(void)
     snprintf(buf, sizeof(buf), "LAeq %6.1f   LAFmax %6.1f   LCpeak %6.1f   dB re FS sine   %u:%02u:%02u",
              (double)s_pub_laeq, (double)s_pub_lafmax, (double)s_pub_lcpeak,
              t / 3600, t / 60 % 60, t % 60);
-    land_fill(x, y, s_w - x, h, COL_BLACK);
+    /* 0051: up to the gear, and CLIP under the line, left of the tags */
+    const int x_end = MENU_GEAR_X(LAND_W) - 4, cx = FPS_X - 14 - 260 - 90;
+    land_fill(x, y, x_end - x, h, COL_BLACK);
     land_text(x, y, buf, LABEL_SCALE, COL_LABEL);
-    if (s_pub_clip) land_text(s_w - 90, y, "CLIP", LABEL_SCALE, COL_CLIP);
-    land_blit(x, s_w);
+    land_fill(cx, TAG_Y, 80, h, COL_BLACK);
+    if (s_pub_clip) land_text(cx, TAG_Y, "CLIP", LABEL_SCALE, COL_CLIP);
+    land_blit(x, x_end);
 }
 
 static void draw_fps(float fps)
 {
-    const int x = s_w - 170, y = 78, h = ARK12_H * LABEL_SCALE;   /* 0015: under the buttons */
+    const int x = FPS_X, y = TAG_Y, h = ARK12_H * LABEL_SCALE;   /* 0015; 0051: left of the gear */
     char buf[16];
     snprintf(buf, sizeof(buf), "%5.1f fps", fps);
-    land_fill(x, y, s_w - x, h, COL_BLACK);
+    land_fill(x, y, MENU_GEAR_X(LAND_W) - 14 - x, h, COL_BLACK);
     land_text(x, y, buf, LABEL_SCALE, COL_WHITE);
-    land_blit(x, s_w);
+    land_blit(x, MENU_GEAR_X(LAND_W));
 }
 
 void app_main(void)
@@ -1251,6 +1265,10 @@ void app_main(void)
     int64_t meter_us = 0, touch_us = 0, press_us = -1;     /* 0014 */
     bool reset_done = false;
     bool press_on_mode = false;             /* 0015: a press that chose a mode resets nothing */
+    /* 0051: a press on the settings: where it went down, the scroll then,
+     * whether it has become a drag, and the gear's press still held. */
+    bool set_press = false, set_dragged = false, set_held = false;
+    int set_x0 = 0, set_y0 = 0, set_scroll0 = 0;
 
     for (;;) {
         const int64_t t0 = esp_timer_get_time();
@@ -1267,11 +1285,11 @@ void app_main(void)
         const float dt = spectrum_clampf((float)(now - last_us) * 1e-6f, 0.0005f, 0.25f);
         last_us = now;
 
-        /* 0036: with the menu or the licences page open the graph is
-         * not drawn -- it would draw over them. Capture, the FFT and the
-         * meter carry on; closing repaints the graph from the floor, as
-         * a change of view does. */
-        const bool overlay = s_menu || s_lic;
+        /* 0036: with the settings up (0051; the menu and the licences
+         * page before) the graph is not drawn -- it would draw over them.
+         * Capture, the FFT and the meter carry on; closing repaints the
+         * graph from the floor, as a change of view does. */
+        const bool overlay = s_set;
         int x0 = 0, x1 = 0;
         if (!overlay) render(dt, &x0, &x1);
         const int64_t tb = esp_timer_get_time();
@@ -1289,8 +1307,7 @@ void app_main(void)
             shown_rate = s_rate;
             layout_for(shown_rate, shown_source);
             draw_source(shown_source);
-            if (s_lic) draw_licences();         /* 0036: over the repaint */
-            else if (s_menu) draw_menu();
+            if (s_set) draw_settings();         /* 0036: over the repaint */
         }
         const int64_t t3 = esp_timer_get_time();
 
@@ -1308,7 +1325,7 @@ void app_main(void)
                      fps, t_capture / 1000.0f / frames, t_fft / 1000.0f / frames,
                      t_draw / 1000.0f / frames, t_bars / 1000.0f / frames,
                      t_fall / 1000.0f / frames, t_blit / 1000.0f / frames);
-            if (!s_menu && !s_lic) draw_fps(fps);     /* 0036 */
+            if (!s_set) draw_fps(fps);     /* 0036 */
             frames = 0;
             report_us = t3;
             t_capture = t_fft = t_draw = 0;
@@ -1316,87 +1333,92 @@ void app_main(void)
         }
 
         /* 0014: the meter's line, and a held press to reset it. */
-        if (t3 - meter_us >= METER_DRAW_US && !s_menu && !s_lic) {     /* 0036 */
+        if (t3 - meter_us >= METER_DRAW_US && !s_set) {     /* 0036 */
             meter_us = t3;
             draw_meters();
         }
         if (touch_present() && t3 - touch_us >= TOUCH_POLL_US) {
             touch_us = t3;
             int tx, ty;
-            if (!touch_get(&tx, &ty)) {
+            const bool down = touch_get(&tx, &ty);
+            if (s_set) {
+                /* 0051: the settings. A finger that moves SET_SLOP or more
+                 * up or down drags the scrolled part with it; one that
+                 * lifts without moving is a tap where it went down. The
+                 * press that opened them is let go first. */
+                if (!down) {
+                    if (set_press && !set_dragged) {
+                        const set_hit_t hit = set_at(set_x0, set_y0, s_set_scroll, s_w);
+                        if (hit == SET_HIT_CLOSE) {
+                            s_set = false;
+                            if (shown_source >= 0) {
+                                layout_for(shown_rate, shown_source);   /* a view chosen here too */
+                                draw_source(shown_source);
+                            }
+                            meter_us = 0;       /* the repaint wiped the meter line */
+                            ESP_LOGI(TAG, "settings closed");
+                        } else if (hit >= SET_HIT_BARS && hit <= SET_HIT_FALL) {
+                            /* 0015, 0016: a view, drawn when the settings close */
+                            const view_mode_t want = (view_mode_t)(hit - SET_HIT_BARS);
+                            if (want != s_mode) {
+                                s_mode = want;
+                                ESP_LOGI(TAG, "mode: %s", want == MODE_WATERFALL ? "waterfall" :
+                                                          want == MODE_OCT ? "1/3 octave" : "bars");
+                            }
+                            draw_settings();
+                        } else if (hit == SET_HIT_FAST || hit == SET_HIT_SLOW) {
+                            /* 0016: Fast <-> Slow. The averages carry on, so the
+                             * bars glide to the new weighting rather than jump. */
+                            s_oct_slow = hit == SET_HIT_SLOW;
+                            ESP_LOGI(TAG, "1/3 octave: %s", s_oct_slow ? "slow" : "fast");   /* 0021 */
+                            draw_settings();
+                        } else if (hit == SET_HIT_MON) {
+                            s_mon_want = !s_mon_want;                   /* 0030 */
+                            if (s_mon_want) audio_out_set_volume(MON_VOLUME);
+                            ESP_LOGI(TAG, "monitor: %s%s", s_mon_want ? "on" : "off",
+                                     s_mon_want && !mon_possible(s_source) ? " (not for this source)" : "");
+                            draw_settings();
+                        }
+                    } else if (set_dragged) {
+                        ESP_LOGI(TAG, "settings scrolled to %d of %d px", s_set_scroll,
+                                 set_max_scroll(LIBVERSIONS_COUNT, LIC_LINE, LAND_H));
+                    }
+                    set_press = set_dragged = set_held = false;
+                } else if (set_held) {
+                    /* the press that opened the settings, not yet lifted */
+                } else if (!set_press) {
+                    set_press = true;
+                    set_x0 = tx;
+                    set_y0 = ty;
+                    set_scroll0 = s_set_scroll;
+                } else if (set_y0 >= SET_HEAD_H &&
+                           (set_dragged || ty - set_y0 >= SET_SLOP || set_y0 - ty >= SET_SLOP)) {
+                    set_dragged = true;
+                    const int want = set_clamp_scroll(set_scroll0 - (ty - set_y0),
+                                                      LIBVERSIONS_COUNT, LIC_LINE, LAND_H);
+                    if (want != s_set_scroll) {
+                        s_set_scroll = want;
+                        draw_settings();
+                    }
+                }
+                press_us = -1;
+                reset_done = false;
+                press_on_mode = false;
+            } else if (!down) {
                 press_us = -1;
                 reset_done = false;
                 press_on_mode = false;
             } else if (press_us < 0) {
                 press_us = t3;
-                /* 0036: the licences page, the menu, or the gear. Any
-                 * press while either is open is theirs, not the meter's. */
-                if (s_lic) {
+                /* 0036: the gear. 0051: it opens the settings, at their top. */
+                if (menu_gear_hit(tx, ty, s_w)) {
                     press_on_mode = true;
-                    const int rows = lic_rows(LAND_H, LIC_LINE);
-                    switch (lic_at(tx, ty, s_w, s_h)) {
-                    case LIC_HIT_UP:
-                        s_lic_scroll = s_lic_scroll > rows ? s_lic_scroll - rows : 0;
-                        draw_licences();
-                        break;
-                    case LIC_HIT_DOWN:
-                        if (s_lic_scroll + rows < LIBVERSIONS_COUNT) s_lic_scroll += rows;
-                        draw_licences();
-                        break;
-                    default:
-                        s_lic = false;
-                        if (shown_source >= 0) {
-                            layout_for(shown_rate, shown_source);
-                            draw_source(shown_source);
-                        }
-                        meter_us = 0;       /* the repaint wiped the meter line */
-                        break;
-                    }
-                } else if (s_menu) {
-                    press_on_mode = true;
-                    const menu_hit_t hit = menu_at(tx, ty, s_w);
-                    if (hit >= MENU_HIT_BARS && hit <= MENU_HIT_FALL) {
-                        /* 0015, 0016: a view; the menu stays, over it */
-                        const view_mode_t want = (view_mode_t)(hit - MENU_HIT_BARS);
-                        if (want != s_mode && shown_source >= 0) {
-                            s_mode = want;
-                            layout_for(shown_rate, shown_source);
-                            draw_source(shown_source);
-                            ESP_LOGI(TAG, "mode: %s", want == MODE_WATERFALL ? "waterfall" :
-                                                      want == MODE_OCT ? "1/3 octave" : "bars");
-                        }
-                        draw_menu();
-                    } else if (hit == MENU_HIT_FAST || hit == MENU_HIT_SLOW) {
-                        /* 0016: Fast <-> Slow. The averages carry on, so the
-                         * bars glide to the new weighting rather than jump. */
-                        s_oct_slow = hit == MENU_HIT_SLOW;
-                        ESP_LOGI(TAG, "1/3 octave: %s", s_oct_slow ? "slow" : "fast");   /* 0021 */
-                        draw_menu();
-                    } else if (hit == MENU_HIT_MON) {
-                        s_mon_want = !s_mon_want;                   /* 0030 */
-                        if (s_mon_want) audio_out_set_volume(MON_VOLUME);
-                        ESP_LOGI(TAG, "monitor: %s%s", s_mon_want ? "on" : "off",
-                                 s_mon_want && !mon_possible(s_source) ? " (not for this source)" : "");
-                        draw_menu();
-                    } else if (hit == MENU_HIT_LICENCES) {
-                        s_menu = false;
-                        s_lic = true;
-                        s_lic_scroll = 0;
-                        ESP_LOGI(TAG, "licences: %d entries", LIBVERSIONS_COUNT);
-                        draw_licences();
-                    } else if (hit == MENU_HIT_OUTSIDE) {
-                        /* the gear again, or anywhere off the menu: closed */
-                        s_menu = false;
-                        if (shown_source >= 0) {
-                            layout_for(shown_rate, shown_source);
-                            draw_source(shown_source);
-                        }
-                        meter_us = 0;
-                    }
-                } else if (menu_gear_hit(tx, ty, s_w)) {
-                    press_on_mode = true;
-                    s_menu = true;
-                    draw_menu();
+                    s_set = true;
+                    s_set_scroll = 0;
+                    set_held = true;
+                    set_press = set_dragged = false;
+                    ESP_LOGI(TAG, "settings: %d libraries", LIBVERSIONS_COUNT);
+                    draw_settings();
                 }
             } else if (!press_on_mode && !reset_done && t3 - press_us >= RESET_HOLD_US) {
                 s_meter_reset_req = true;

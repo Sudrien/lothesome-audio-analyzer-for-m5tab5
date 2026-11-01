@@ -36,7 +36,7 @@ the screen:
 The built-in microphones and the jack hear nothing below 80 Hz; that part
 of the axis is marked with a red line at -90 dBFS.
 
-**MON**, in the menu, sends the source to headphones on the jack or a USB
+**MON**, in the settings, sends the source to headphones on the jack or a USB
 headset, at a fixed volume. It is off at power-up; while it is on, MON
 shows beside the fps. A USB microphone is passed straight
 through to the USB output: its own channels, so a stereo one stays
@@ -44,10 +44,11 @@ stereo, at 16 bits.
 
 ## Views
 
-The gear, top right, opens the menu: the three views, **FAST/SLOW**,
-**MON** and **LICENCES**. Tap the gear again, or anywhere off the menu,
-to close it. The graph pauses while the menu is open; the meter keeps
-measuring.
+The gear, top right, opens the settings, the whole screen: the three
+views, **FAST/SLOW** and **MON**, and under them the libraries the
+firmware is built from. Drag the screen up and down to scroll it; tap
+**BACK** or the gear to close it, and a view chosen there is drawn. The
+graph pauses while the settings are up; the meter keeps measuring.
 
 - **BARS** -- the spectrum, one bar per pixel column. Bass is finer but
   slower to respond: 2.9 Hz resolution over a third of a second at the
@@ -87,12 +88,14 @@ How it works: `ARCHITECTURE.md`.
 ## Development
 
 `make -C m5tab5/test` runs the host tests. `make -C m5tab5/test/render` draws each view
-to a `.ppm` on a PC, and the menu and the licences page; it needs one
+to a `.ppm` on a PC, and the settings, at the top, halfway and at the
+end; it needs one
 `idf.py build` first, for the font, and cmake.
 
 ## Licence
 
 MIT. See `LICENSE`. The firmware also contains ESP-IDF, esp-dsp,
 Espressif's LCD, touch and USB components, the feckless libraries and the
-Ark Pixel font (OFL-1.1). **LICENCES** in the menu lists each, at the
-version the build used, with its licence.
+Ark Pixel, Galmuri (OFL-1.1) and Arabixel Basic (CC BY 4.0) fonts. The
+foot of the settings lists each, at the version the build used, with its
+licence.

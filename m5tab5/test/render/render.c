@@ -148,7 +148,7 @@ static void run(view_mode_t mode, uint32_t rate, int src, const char *path)
     }
     draw_meters();
     draw_fps((float)FPS);
-    if (s_menu) draw_menu();        /* 0036: what a press on the gear draws */
+    if (s_set) draw_settings();     /* 0051: what a press on the gear draws */
     save(path);
 }
 
@@ -163,16 +163,19 @@ int main(void)
     run(MODE_SPECTRUM,  48000, SRC_BUILTIN, "bars-builtin.ppm");
     run(MODE_OCT,       48000, SRC_BUILTIN, "oct-builtin.ppm");
     run(MODE_WATERFALL, 48000, SRC_BUILTIN, "fall-builtin.ppm");
-    /* 0036: the menu over a view, as a press on the gear leaves it, and
-     * the licences page */
-    s_menu = true;
-    run(MODE_OCT,       48000, SRC_USB,     "menu-oct.ppm");
-    run(MODE_SPECTRUM,  48000, SRC_BUILTIN, "menu-bars.ppm");
-    s_menu = false;
-    s_lic = true;
-    s_lic_scroll = 0;
-    draw_licences();
-    save("licences.ppm");
-    s_lic = false;
+    /* 0051: the settings, as a press on the gear leaves them, in 1/3 OCT
+     * with a USB microphone and in BARS with the built-in ones; and
+     * scrolled halfway and to the end, where the libraries are */
+    s_set = true;
+    s_set_scroll = 0;
+    run(MODE_OCT,       48000, SRC_USB,     "settings-oct.ppm");
+    run(MODE_SPECTRUM,  48000, SRC_BUILTIN, "settings-bars.ppm");
+    s_set_scroll = set_max_scroll(LIBVERSIONS_COUNT, LIC_LINE, LAND_H) / 2;
+    draw_settings();
+    save("settings-mid.ppm");
+    s_set_scroll = 1 << 20;     /* clamped to the end */
+    draw_settings();
+    save("settings-end.ppm");
+    s_set = false;
     return 0;
 }
