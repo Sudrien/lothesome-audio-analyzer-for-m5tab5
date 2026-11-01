@@ -4,8 +4,8 @@
 #
 # Needs the Ark12 font, which is feckless-graphics-handler's. After an
 # idf.py build it is in managed_components; point ARK12 elsewhere if not.
-# And cmake, for the licences page's list (0036): cmake/libversions.cmake
-# run on its own, into libversions/ here.
+# And cmake, for the licences page's list (0036): 0050, feckless-libs'
+# feckless_libversions generator, run on its own, into libversions/ here.
 #
 # SPDX-License-Identifier: MIT
 
@@ -19,8 +19,10 @@ LDFLAGS := -lm
 
 all: run
 
-libversions/libversions.h: ../../cmake/libversions.cmake ../../dependencies.lock
-	cmake -P ../../cmake/libversions.cmake
+LIBV ?= ../../managed_components/feckless_libversions/cmake/libversions.cmake
+
+libversions/libversions.h: $(LIBV) ../../dependencies.lock
+	cmake -DROOT=../.. "-DLV_NAME=Lothesome Audio Analyzer" -P $(LIBV)
 
 render: render.c stub/stub.h ../../main/analyzer.c ../../main/spectrum.h ../../main/menu.h \
         libversions/libversions.h

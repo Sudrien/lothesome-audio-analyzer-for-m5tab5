@@ -51,7 +51,7 @@
 
 #include "landmap.h"      /* 0006 */
 #include "menu.h"         /* 0036 */
-#include "libversions.h"  /* 0036: generated, cmake/libversions.cmake */
+#include "libversions.h"  /* 0036: generated; 0050: by feckless_libversions(), elf/ */
 #include "monoring.h"     /* 0003 */
 #include "spectrum.h"
 
@@ -624,6 +624,14 @@ static void draw_menu(void)
  * has it -- module, checkout, licence -- in three columns as wide as
  * their longest entry. Paged by up and down if it does not fit.
  */
+/* 0050: entry i's column c -- module, checkout, licence. The rows are a
+ * struct now (feckless_libversions' libv_t), not three strings. */
+static const char *lic_cell(int i, int c)
+{
+    const libv_t *e = &k_libversions[i];
+    return c == 0 ? e->module : c == 1 ? e->checkout : e->licence;
+}
+
 static void draw_licences(void)
 {
     const int rows = lic_rows(LAND_H, LIC_LINE);
@@ -631,7 +639,7 @@ static void draw_licences(void)
     if (!cw[0]) {
         for (int i = 0; i < LIBVERSIONS_COUNT; i++)
             for (int c = 0; c < 3; c++) {
-                const int w = land_text_w(k_libversions[i][c], LABEL_SCALE);
+                const int w = land_text_w(lic_cell(i, c), LABEL_SCALE);
                 if (w > cw[c]) cw[c] = w;
             }
     }
@@ -645,9 +653,9 @@ static void draw_licences(void)
         const int i = s_lic_scroll + r;
         if (i >= LIBVERSIONS_COUNT) break;
         const int y = LIC_HEAD_H + r * LIC_LINE;
-        land_text(x0, y, k_libversions[i][0], LABEL_SCALE, COL_WHITE);
-        land_text(x1, y, k_libversions[i][1], LABEL_SCALE, COL_LABEL);
-        land_text(x2, y, k_libversions[i][2], LABEL_SCALE, COL_LABEL);
+        land_text(x0, y, lic_cell(i, 0), LABEL_SCALE, COL_WHITE);
+        land_text(x1, y, lic_cell(i, 1), LABEL_SCALE, COL_LABEL);
+        land_text(x2, y, lic_cell(i, 2), LABEL_SCALE, COL_LABEL);
     }
     const int by = lic_btn_y(LAND_H);
     draw_seg(lic_close_x(), by, LIC_BTN_W, LIC_BTN_H, "CLOSE", false, COL_LABEL);

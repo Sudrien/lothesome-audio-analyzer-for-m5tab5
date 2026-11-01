@@ -70,7 +70,8 @@ endforeach()
 feckless_abi_elf(lothesome_analyzer)
 
 # 0036: libversions.h, which analyzer.c includes. Moved here from the
-# top-level CMakeLists.txt with analyzer.c.
+# top-level CMakeLists.txt with analyzer.c. 0050: written by feckless-libs'
+# feckless_libversions, from the lock, the fonts and this repository's
+# commit, in place of cmake/libversions.cmake. Nothing is vendored here.
 idf_component_get_property(main_lib main COMPONENT_LIB)
-include(${CMAKE_CURRENT_LIST_DIR}/../cmake/libversions.cmake)
-target_include_directories(${main_lib} PRIVATE "${LIBVERSIONS_DIR}")
+feckless_libversions(${main_lib} NAME "Lothesome Audio Analyzer" LICENSE MIT)

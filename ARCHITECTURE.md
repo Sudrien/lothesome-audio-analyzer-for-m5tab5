@@ -1069,3 +1069,33 @@ Duplicitous, the launcher this analyzer's ELF runs under, is Avoidant
 (avoidant-launcher-for-m5tab5, its 0032). CLAUDE.md and a comment in
 the workflow said the old name; the entries above keep it. Nothing
 changes for the ELF: Avoidant runs ABI v1 as Duplicitous did.
+
+### 0050 -- feckless-libs v0.8.7, and the licences from feckless_libversions
+
+The licences page's list is written by feckless-libs' feckless_libversions
+(its 8012-8014), which the Tab5 projects share now, in place of
+`cmake/libversions.cmake`, which goes. `elf/CMakeLists.txt` calls
+`feckless_libversions()` after `feckless_abi_elf()`; it reads what the old
+file read -- the lock, the Ark Pixel commit, this repository's -- and
+adds the other two fonts the graphics handler compiles in, Galmuri and
+Arabixel Basic, whose licences travel with the firmware too. Its rows are
+a struct (`libv_t`) rather than three strings, so `draw_licences()` reads
+them through `lic_cell()`. main requires `feckless_libversions` in the
+ELF build: a header, nothing linked.
+
+Every feckless pin moves from v0.3.0 to v0.8.7, with
+`feckless_libversions` added. Between the two, feckless_abi,
+feckless_drivers, feckless_graphics_handler and usb_host_uac changed no
+header, and the ABI is v1 still: the ELF runs on any v1 launcher, as
+before. The font gained Greek and IPA (feckless-libs' 8015); nothing here
+draws them. **This changes `main/idf_component.yml`**: the lock
+re-resolves on the next build, and its diff is to be read before it is
+committed. v0.8.7 must be tagged first.
+
+`test/render` runs feckless_libversions' generator on its own (`LIBV`,
+from managed_components/ by default), and gains `stub/feckless_abi.h`:
+analyzer.c has included `feckless_abi.h` since 0039, and the render had
+not built since. *Checked:* `test/` (menutest, spectrumtest) passes;
+`test/render`, built against feckless-libs' 8012-8015 sources, draws every
+view and the licences page from the generated list, looked at. Not built
+with ESP-IDF, not on a Tab5.

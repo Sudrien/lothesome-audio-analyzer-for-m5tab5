@@ -11,22 +11,30 @@ dependencies:
   # fixes -- which the drivers pinned from the registry until v0.2.0 and
   # the project names now. No ABI section: the ELF uses the core list
   # only, and runs on any launcher on v1.
+  # 0050: v0.8.7, for feckless_libversions below. Between v0.3.0 and
+  # v0.8.7 none of these four changed a header; the ABI is v1 still.
   feckless_abi:
     git: https://github.com/Sudrien/feckless-libs-for-m5tab5.git
     path: components/feckless_abi
-    version: "v0.3.0"
+    version: "v0.8.7"
   feckless_drivers:
     git: https://github.com/Sudrien/feckless-libs-for-m5tab5.git
     path: components/feckless_drivers
-    version: "v0.3.0"
+    version: "v0.8.7"
   feckless_graphics_handler:
     git: https://github.com/Sudrien/feckless-libs-for-m5tab5.git
     path: components/feckless_graphics_handler
-    version: "v0.3.0"
+    version: "v0.8.7"
   usb_host_uac:
     git: https://github.com/Sudrien/feckless-libs-for-m5tab5.git
     path: components/usb_host_uac
-    version: "v0.3.0"
+    version: "v0.8.7"
+  # 0050: the licences list (libversions.h), generated when elf/ is
+  # configured, in place of cmake/libversions.cmake. A header only.
+  feckless_libversions:
+    git: https://github.com/Sudrien/feckless-libs-for-m5tab5.git
+    path: components/feckless_libversions
+    version: "v0.8.7"
 
   # The FFT. Replaces arduinoFFT. Optimised for the P4 (dsps_fft2r_fc32
   # picks the arp4 assembly when it can). Its windows do not include

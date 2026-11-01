@@ -8,6 +8,7 @@ if(_lothesome_elf)
         SRCS "analyzer.c"
         INCLUDE_DIRS "."
         REQUIRES feckless_abi feckless_drivers feckless_graphics_handler
+                 feckless_libversions   # 0050: libversions.h; nothing linked
                  esp-dsp esp_timer
                  esp_app_format   # 0005: esp_app_get_description()
     )
