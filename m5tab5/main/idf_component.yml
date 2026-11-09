@@ -53,6 +53,22 @@ dependencies:
     git: https://github.com/Sudrien/feckless-libs-for-m5tab5.git
     path: components/feckless_box_calls
     version: "umode"
+  # u-lothesome-0002: what feckless_box_calls needs that the analyzer did
+  # not: it answers a boxed app's storage calls too (u-feckless-0007), so it
+  # requires the storage handler, and that the FatFs and USB mass-storage
+  # forks. The analyzer makes no storage call; they are linked, not used.
+  feckless_storage_handler:
+    git: https://github.com/Sudrien/feckless-libs-for-m5tab5.git
+    path: components/feckless_storage_handler
+    version: "umode"
+  fatfs:
+    git: https://github.com/Sudrien/feckless-libs-for-m5tab5.git
+    path: components/fatfs
+    version: "umode"
+  usb_host_msc:
+    git: https://github.com/Sudrien/feckless-libs-for-m5tab5.git
+    path: components/usb_host_msc
+    version: "umode"
 
   # The FFT. Replaces arduinoFFT. Optimised for the P4 (dsps_fft2r_fc32
   # picks the arp4 assembly when it can). Its windows do not include

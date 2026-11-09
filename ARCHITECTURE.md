@@ -1203,3 +1203,21 @@ after an ESP-IDF build). `menutest` and `spectrumtest` pass.
 
 If the screen stalls between frames, the drawing thread is computing a
 long time between host calls, with interrupts held off (u-feckless-0017).
+
+### u-lothesome-0002 -- the storage handler, for feckless_box_calls
+
+The first build stopped while configuring:
+
+```
+Failed to resolve component 'feckless_storage_handler' required by
+component 'feckless_box_calls': unknown name.
+```
+
+feckless_box_calls answers a boxed app's storage calls as well
+(u-feckless-0007), so it needs the storage handler, which in turn
+needs the FatFs and USB mass-storage forks. Spurious pins all three
+itself; the analyzer never needed them. As with every feckless
+component, the app pins them, at the same ref. `main/idf_component.yml`
+adds `feckless_storage_handler`, `fatfs` and `usb_host_msc` at
+`umode`. The analyzer makes no storage call, so they are linked into
+the .bin and never called. **`dependencies.lock` re-resolves.**
