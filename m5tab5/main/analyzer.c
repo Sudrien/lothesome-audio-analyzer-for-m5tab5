@@ -145,7 +145,13 @@ static const char *TAG = "analyzer";
 #define CAPTURE_CHUNK       (120)
 #define CAPTURE_STACK       (4096)
 #define CAPTURE_PRIO        (5)     /* above app_main's 1: it must never wait on a draw */
-#define CAPTURE_CORE        (1)     /* app_main runs on 0 */
+/* u-lothesome-0005: core 0. In a box app_main runs on core 1 (0004), away
+ * from the panel's interrupts on core 0; this task makes a host call every
+ * few microseconds (about 54 000 a second), so its windows are short and do
+ * not hold those interrupts off, and it no longer takes core 1's time from
+ * the drawing. Sharing core 1 had the FFT at 4.0 ms (2.7 alone) and the
+ * frame at 34 FPS (48 alone). */
+#define CAPTURE_CORE        (0)
 
 /* Fresh samples a frame waits for before redrawing, so a fast draw does
  * not repaint the same audio. 256 is 5.3 ms at 48 kHz. */

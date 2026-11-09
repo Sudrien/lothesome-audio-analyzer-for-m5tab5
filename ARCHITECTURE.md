@@ -1270,3 +1270,21 @@ their interrupts are on core 1. The I2S capture sits behind about
 20 ms of DMA buffers, more than a window lasts.
 
 *Expected:* no cyan, at about the same FPS. *Not checked:* a board.
+
+### u-lothesome-0005 -- the capture task on core 0
+
+After 0004 the analyzer runs on core 1, but at 34 FPS, down from 48.
+Everything core-bound slowed together: fft 2.7 → 4.0 ms, bars 3.5 →
+4.6 ms, blit 12 → 16 ms. The capture task was pinned to core 1 too,
+and at priority 5 it preempted the drawing whenever samples arrived,
+with its own work on top: the meter's soft-float doubles, about 48 000
+host calls a second.
+
+It now runs on core 0. That doesn't bring back the cyan of 0004's
+entry. The capture task makes a host call every few microseconds
+(feckless-libs' call stats show about 54 000 a second), so its windows
+are short and the panel's per-frame interrupt on core 0 isn't held off
+by them. The drawing gets core 1 to itself.
+
+*Expected:* the FFT back to about 2.7 ms and near 48 FPS, with no
+cyan. *Not checked:* a board.
