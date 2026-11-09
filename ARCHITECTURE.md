@@ -1221,3 +1221,29 @@ component, the app pins them, at the same ref. `main/idf_component.yml`
 adds `feckless_storage_handler`, `fatfs` and `usb_host_msc` at
 `umode`. The analyzer makes no storage call, so they are linked into
 the .bin and never called. **`dependencies.lock` re-resolves.**
+
+### u-lothesome-0003 -- the framebuffer asked for once
+
+feckless-libs' call stats (u-feckless-0029), in the box at 26 FPS,
+`draw 31 ms (bars 19, blit 12)`:
+
+```
+  gfx_fb                     24492/s    5.89 us each  144.2 ms/s
+  gfx_w                      24492/s    5.59 us each  137.0 ms/s
+```
+
+`repaint_rows()` asks for `gfx_fb()` and `gfx_w()` for every column it
+paints, about 940 times a frame. Outside a box those were plain calls;
+in one, each is a host call, a trap there and back. Together they were
+about 11 ms of the 19 ms "bars" time. `waterfall_push()` asked for the
+same pair once per batch.
+
+Both now go through `fb_and_stride()`, which asks once and keeps the
+answers in `s_fb`/`s_stride`. Neither changes after `gfx_init()`: the
+panel is never rotated here, since `landmap.h` maps landscape onto it.
+Before `gfx_init()` it keeps asking, as the code did before.
+feckless-libs' u-feckless-0030 makes each such call cheaper as well
+(about 1.2 µs, no lock).
+
+*Expected:* "bars" back to about 8 ms and the frame near 40 FPS, as
+before the box. *Not checked:* a board.

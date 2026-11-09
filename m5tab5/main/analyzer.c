@@ -453,6 +453,25 @@ static void draw_static(void)
  * 0006: in panel terms the bar is w panel rows, and its landscape rows
  * y_top..y_bot are one contiguous span of each of them -- so the colours
  * are worked out once into s_line and copied w times. */
+/* u-lothesome-0003: the framebuffer and its stride, asked for once. In a box
+ * gfx_fb() and gfx_w() are host calls -- a trap each way, about 6 us -- and
+ * repaint_rows() asked for both per column, about 940 times a frame: 11 ms
+ * of a 31 ms frame (feckless-libs u-feckless-0029's call stats). Neither
+ * changes once gfx_init() has run: the panel is not rotated here (landmap.h
+ * maps landscape onto it). */
+static uint16_t *s_fb;
+static int s_stride;
+
+static uint16_t *fb_and_stride(int *stride)
+{
+    if (!s_fb) {
+        s_fb = gfx_fb();
+        s_stride = gfx_w();
+    }
+    *stride = s_stride;
+    return s_fb;
+}
+
 static void repaint_rows(int xs, int w, int y_top, int y_bot, int bar_top_y, int peak_y,
                          bool partial)
 {
@@ -469,8 +488,8 @@ static void repaint_rows(int xs, int w, int y_top, int y_bot, int bar_top_y, int
         s_line[y] = c;
     }
     const landmap_rect_t r = landmap_rect(xs, y_top, w, y_bot - y_top + 1, LAND_W);
-    uint16_t *fb = gfx_fb();
-    const int stride = gfx_w();
+    int stride;
+    uint16_t *fb = fb_and_stride(&stride);     /* u-lothesome-0003 */
     for (int py = r.y; py < r.y + r.h; py++)
         memcpy(fb + (size_t)py * (size_t)stride + (size_t)r.x, &s_line[y_top],
                (size_t)r.w * sizeof(uint16_t));
@@ -1049,8 +1068,8 @@ static void waterfall_push(int n, int *x0, int *x1)
     /* Move the picture down by the whole batch, newest row at the top. */
     int k = s_wf_qn;
     if (k > s_wf_h) k = s_wf_h;
-    uint16_t *fb = gfx_fb();
-    const int stride = gfx_w();
+    int stride;
+    uint16_t *fb = fb_and_stride(&stride);     /* u-lothesome-0003 */
     for (int b = s_first_col; b < s_graph_w; b++) {
         const int lx = s_left + b;
         uint16_t *row = fb + (size_t)landmap_py(lx, 0, LAND_W) * (size_t)stride +
