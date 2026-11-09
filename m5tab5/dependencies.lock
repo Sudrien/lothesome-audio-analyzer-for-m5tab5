@@ -117,6 +117,16 @@ dependencies:
     - esp32h4
     - linux
     version: 1.6.0
+  fatfs:
+    component_hash: 9000ddd28ad4fda6b7aa8349641c667a72ea1cc6345b4e00767f49990bb9a656
+    dependencies:
+    - name: idf
+      version: '>=5.4.2'
+    source:
+      git: https://github.com/Sudrien/feckless-libs-for-m5tab5.git
+      path: components/fatfs
+      type: git
+    version: 7ddc7556f78ab6fddde5cff199873163ef2eb18b
   feckless_abi:
     component_hash: 60ddb50c2bc32883e8fdf10873af049a0ca9f6490df80140cefdc3121eb9a1e6
     dependencies:
@@ -185,6 +195,16 @@ dependencies:
       path: components/feckless_libversions
       type: git
     version: 7ddc7556f78ab6fddde5cff199873163ef2eb18b
+  feckless_storage_handler:
+    component_hash: 9900fcd72438bfd9099d658ef707e3dad8827688048df368b4006d006e66bb2f
+    dependencies:
+    - name: idf
+      version: '>=5.4.2'
+    source:
+      git: https://github.com/Sudrien/feckless-libs-for-m5tab5.git
+      path: components/feckless_storage_handler
+      type: git
+    version: 7ddc7556f78ab6fddde5cff199873163ef2eb18b
   feckless_umode:
     component_hash: fe4d2851602ce66cc8d433d05296765ae3c1212203bbe18558fbd33c2be34512
     dependencies:
@@ -201,6 +221,26 @@ dependencies:
     source:
       type: idf
     version: 6.1.0
+  usb_host_msc:
+    component_hash: 01168c167dc4c72afdb429698f864acc683aa465a33b04bb293f1559e20c6b8c
+    dependencies:
+    - name: idf
+      version: '>=6.1'
+    - name: espressif/usb
+      public: true
+      version: ^1.0.0
+    source:
+      git: https://github.com/Sudrien/feckless-libs-for-m5tab5.git
+      path: components/usb_host_msc
+      type: git
+    targets:
+    - esp32s2
+    - esp32s3
+    - esp32p4
+    - esp32h4
+    - esp32s31
+    - linux
+    version: 7ddc7556f78ab6fddde5cff199873163ef2eb18b
   usb_host_uac:
     component_hash: a56895ab478bee0e11cbfa3c32497b5860cf7b46498e43244ed3fe2168368c2d
     dependencies:
@@ -225,15 +265,18 @@ dependencies:
     version: 7ddc7556f78ab6fddde5cff199873163ef2eb18b
 direct_dependencies:
 - espressif/esp-dsp
+- fatfs
 - feckless_abi
 - feckless_box_calls
 - feckless_box_libc
 - feckless_drivers
 - feckless_graphics_handler
 - feckless_libversions
+- feckless_storage_handler
 - feckless_umode
 - idf
+- usb_host_msc
 - usb_host_uac
-manifest_hash: 07d7c1b4ec4a40010d4365aaca242433ee0ca001e2aee77fce02384d6219ba53
+manifest_hash: 588fce56aab8243720b3409d7542929e6f926310ce6653657b79e7ef70622d86
 target: esp32p4
 version: 3.0.0
