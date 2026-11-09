@@ -19,12 +19,29 @@
 #include "feckless_box_calls.h"
 #include "feckless_umode_idf.h"
 #include "feckless_umode_load.h"
+#include "gfx.h"
+#include "lcd.h"
+#include "tab5io.h"
+#include "touch.h"
 
 extern const uint8_t elf_start[] asm("_binary_lothesome_analyzer_app_elf_start");
 extern const uint8_t elf_end[]   asm("_binary_lothesome_analyzer_app_elf_end");
 
 void app_main(void)
 {
+    /* u-lothesome-0004: the board up here first, on core 0, as a launcher
+     * has it before an app runs: the panel's interrupts -- its DMA restart,
+     * every frame -- are then core 0's, and the analyzer runs on core 1
+     * (feckless_umode_app_run_on()), where its long windows cannot starve
+     * them. Its own inits find them up and return ESP_OK. */
+    esp_lcd_panel_handle_t panel = NULL;
+    if (tab5io_init() != ESP_OK || lcd_init(&panel) != ESP_OK ||
+        gfx_init(panel, LCD_H_RES, LCD_V_RES) != ESP_OK) {
+        ESP_LOGE("standalone", "the board did not come up");
+        return;
+    }
+    touch_init(tab5io_bus(), LCD_H_RES, LCD_V_RES);     /* the analyzer copes without */
+
     /* The box: the largest PSRAM block less 3 MB for this firmware (the
      * framebuffer and the drivers' buffers come after), at most 16 MB; 64 KB
      * of it app_main's stack. The stack guard's interrupt out of every
@@ -37,14 +54,14 @@ void app_main(void)
     uint32_t n;
     const feckless_umode_call_t *calls = feckless_box_calls_v1(&n);
     feckless_umode_app_t *app = NULL;
-    esp_err_t e = feckless_umode_load(elf_start, (size_t)(elf_end - elf_start), calls, n,
+    const esp_err_t e = feckless_umode_load(elf_start, (size_t)(elf_end - elf_start), calls, n,
                                       (uint32_t)box, 64 * 1024, &app);
     if (e != ESP_OK) {
         ESP_LOGE("standalone", "the analyzer would not load in a box: %s", esp_err_to_name(e));
         return;
     }
     ESP_LOGI("standalone", "the analyzer in a box of %u KB", (unsigned)(box / 1024));
-    const feckless_umode_end_t end = feckless_umode_app_run(app);
+    const feckless_umode_end_t end = feckless_umode_app_run_on(app, 1);   /* u-lothesome-0004 */
     ESP_LOGE("standalone", "the analyzer ended: reason %d, %s at 0x%08x", (int)end.reason,
              end.reason == FECKLESS_UMODE_END_FAULT ? feckless_umode_cause_name(end.mcause) : "-",
              (unsigned)end.pc);

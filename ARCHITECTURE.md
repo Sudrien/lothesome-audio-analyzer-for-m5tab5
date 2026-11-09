@@ -1247,3 +1247,26 @@ feckless-libs' u-feckless-0030 makes each such call cheaper as well
 
 *Expected:* "bars" back to about 8 ms and the frame near 40 FPS, as
 before the box. *Not checked:* a board.
+
+### u-lothesome-0004 -- the board on core 0, the analyzer on core 1
+
+After u-lothesome-0003 the analyzer draws at about 48 FPS, but the
+panel flashes cyan. That is a DSI underrun: the panel's DMA restart, an
+interrupt every frame, is held off while the drawing thread computes
+in long windows on the same core. feckless-libs' u-feckless-0031
+explains it.
+
+`standalone.c` now does what a launcher does. It brings up the board
+first (`tab5io_init`, `lcd_init`, `gfx_init`, `touch_init`), on core
+0, in the .bin's `app_main`, so the panel's interrupts belong to core
+0. It then runs the analyzer with `feckless_umode_app_run_on(app, 1)`.
+The analyzer's own `tab5io_init`, `lcd_init` and `gfx_init` find
+everything up and return ESP_OK, as they do under Avoidant. Its capture
+task was already pinned to core 1. `main/CMakeLists.txt` gains
+`feckless_drivers` and `feckless_graphics_handler` for the .bin.
+
+The audio and the USB host are still brought up by the analyzer, so
+their interrupts are on core 1. The I2S capture sits behind about
+20 ms of DMA buffers, more than a window lasts.
+
+*Expected:* no cyan, at about the same FPS. *Not checked:* a board.

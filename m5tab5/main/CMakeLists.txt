@@ -20,6 +20,7 @@ idf_component_register(
     SRCS "standalone.c"
     PRIV_REQUIRES feckless_abi
                   feckless_umode feckless_box_calls   # u-lothesome-0001: the box
+                  feckless_drivers feckless_graphics_handler   # u-lothesome-0004: the board first
 )
 
 if(NOT CMAKE_BUILD_EARLY_EXPANSION)
