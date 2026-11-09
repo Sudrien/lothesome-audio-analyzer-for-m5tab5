@@ -1,6 +1,7 @@
 dependencies:
   idf:
-    version: ">=5.4.2"
+    # u-lothesome-0001: 6.1, as feckless-libs' umode branch requires.
+    version: ">=6.1"
 
   # 0039: the feckless ABI, the list of what the ELF may take from a
   # launcher, and the libraries it exports. 0047: all three from
@@ -16,25 +17,42 @@ dependencies:
   feckless_abi:
     git: https://github.com/Sudrien/feckless-libs-for-m5tab5.git
     path: components/feckless_abi
-    version: "v0.8.7"
+    version: "umode"
   feckless_drivers:
     git: https://github.com/Sudrien/feckless-libs-for-m5tab5.git
     path: components/feckless_drivers
-    version: "v0.8.7"
+    version: "umode"
   feckless_graphics_handler:
     git: https://github.com/Sudrien/feckless-libs-for-m5tab5.git
     path: components/feckless_graphics_handler
-    version: "v0.8.7"
+    version: "umode"
   usb_host_uac:
     git: https://github.com/Sudrien/feckless-libs-for-m5tab5.git
     path: components/usb_host_uac
-    version: "v0.8.7"
+    version: "umode"
   # 0050: the licences list (libversions.h), generated when elf/ is
   # configured, in place of cmake/libversions.cmake. A header only.
   feckless_libversions:
     git: https://github.com/Sudrien/feckless-libs-for-m5tab5.git
     path: components/feckless_libversions
-    version: "v0.8.7"
+    version: "umode"
+
+  # u-lothesome-0001: a box. Every feckless pin above is feckless-libs' umode
+  # branch, not a tag, while it is tested; the lock records its commit.
+  # feckless_box_libc goes into the ELF (feckless_abi_box_elf()); the box
+  # itself, feckless_umode and feckless_box_calls, into standalone.c's .bin.
+  feckless_box_libc:
+    git: https://github.com/Sudrien/feckless-libs-for-m5tab5.git
+    path: components/feckless_box_libc
+    version: "umode"
+  feckless_umode:
+    git: https://github.com/Sudrien/feckless-libs-for-m5tab5.git
+    path: components/feckless_umode
+    version: "umode"
+  feckless_box_calls:
+    git: https://github.com/Sudrien/feckless-libs-for-m5tab5.git
+    path: components/feckless_box_calls
+    version: "umode"
 
   # The FFT. Replaces arduinoFFT. Optimised for the P4 (dsps_fft2r_fc32
   # picks the arp4 assembly when it can). Its windows do not include

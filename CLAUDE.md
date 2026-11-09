@@ -40,6 +40,17 @@ Within a patch, change the lines that must change and no others.
 A patch that touches the manifest says so, and the lock that comes out
 of the next build has its diff read before it is committed.
 
+**The `umode` branch has a numbering of its own: `u-lothesome-NNNN`.**
+Its patches are named `u-lothesome-0001-<subject>.patch`, `u-lothesome-0002-...`,
+and apply to the `umode` branch, not to main. They are numbered from
+`--start-number 1` and renamed with the prefix; the subject has neither.
+Their `ARCHITECTURE.md` entries are under "The `umode` branch" at the end
+of the file, headed `u-lothesome-NNNN`, so they cannot clash with a patch on
+main meanwhile. Look at the last `u-lothesome` entry for the next number.
+The branch pins feckless-libs' own `umode` branch (`u-feckless-NNNN`), not a
+tag; Avoidant's `umode` branch (`u-avoidant-NNNN`) is the launcher that runs
+it. When it merges, its entries move into the series it goes into.
+
 **Any change to `sdkconfig.defaults` needs `rm sdkconfig` before the next
 build.** The defaults only fill keys an existing sdkconfig lacks.
 

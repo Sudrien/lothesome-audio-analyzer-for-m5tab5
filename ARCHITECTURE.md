@@ -1134,3 +1134,72 @@ ends with 21 libraries) and spectrumtest -- passes. `test/render` (with
 0050's stub) draws the graph's screen and the settings at the top, in 1/3
 OCT and in BARS, halfway and at the end, at `-Wall -Wextra -Werror`;
 looked at. Not built with ESP-IDF, not on a Tab5.
+
+## The `umode` branch
+
+The analyzer built for a box. It runs in RISC-V user mode, in one block
+of PSRAM that the PMP grants it and nothing else, and the launcher
+answers and checks every call it makes outside that block. The launcher
+side is feckless-libs' `umode` branch, `u-feckless-0001` to `0023`, and
+Avoidant's, `u-avoidant-0001`. Patches here are numbered
+`u-lothesome-NNNN` (CLAUDE.md). The analyzer is the second app built for
+the box, after Spurious, and the first to use what the box gained for
+it: float maths and `heap_caps` in the ELF (u-feckless-0020), audio, USB
+and the font (0021), the framebuffer granted beside the box (0022), and
+threads (0023).
+
+### u-lothesome-0001 -- the analyzer in a box
+
+- `elf/CMakeLists.txt`: `feckless_abi_box_elf()` replaces
+  `feckless_abi_elf()`. The ELF now links in `feckless_box_libc`: the
+  pure part of libc, the float maths (`powf`, `cosf`, `atan2f`, `sqrtf`,
+  `fmaxf` here and in esp-dsp's set-up) and `heap_caps_malloc`. The build
+  fails if the ELF imports any of that. esp-dsp is still linked in,
+  as `ELF_COMPONENTS`.
+- `analyzer.c`: `feckless_abi_require_box()` beside
+  `feckless_abi_require()`. `test/render/stub/feckless_box.h` stubs it
+  for the PC render.
+- `standalone.c`: the .bin runs its embedded ELF in a box, not through
+  `feckless_abi_run()`, which would refuse it. It uses the largest PSRAM
+  block less 3 MB, at most 16 MB, with a 64 KB stack for `app_main`. The
+  analyzer does its own board, audio and USB set-up, all through the
+  box.
+- `sdkconfig.defaults`: `CONFIG_BOOTLOADER_REGION_PROTECTION_ENABLE=n`,
+  as in Avoidant's and Spurious's umode branches. **`rm sdkconfig`.**
+- `main/idf_component.yml`: the five feckless pins move from `v0.8.7` to
+  `umode`, and `feckless_box_libc`, `feckless_umode` and
+  `feckless_box_calls` are added. The IDF floor moves from 5.4.2 to 6.1.
+  **`dependencies.lock` is not updated**: the next build re-resolves it.
+
+How it runs in the box:
+- `app_main` initialises the board and the audio, then starts the
+  capture task with `xTaskCreatePinnedToCore()`. That is a thread of the
+  box, with its stack in the box and its own host task.
+- The capture task reads with `audio_out_capture_read()` or
+  `uac_mic_read()`. These are unlocked host calls, so they don't block
+  the drawing.
+- `app_main` then draws in place into `gfx_fb()`. The first call grants
+  the framebuffer, read and write, beside the box.
+- Text goes through `ark12_glyph()`, which reads Ark12's tables. The
+  tables are copied into the box because the ELF imports them.
+
+The names were read from analyzer.c and its headers. Nothing has been
+built against the box, so this patch is the first ESP-IDF build of
+feckless-libs u-feckless-0020 to 0023. A name the box still lacks fails
+the ELF's build (abicheck or boxcheck) or its load, by name, before any
+of it runs.
+
+*Not checked:* an ESP-IDF build of the ELF or the .bin; a board; the
+PC render (`test/render` needs `managed_components`, so it builds only
+after an ESP-IDF build). `menutest` and `spectrumtest` pass.
+
+*What to look for on a Tab5*, standalone or under Avoidant's umode branch:
+- in the ELF's build: `feckless_box_libc: boxed, N imports`;
+- `feckless_umode: app in its box`;
+- `thread 1: ... bytes of stack in the box`;
+- `granted 0x........ (read, write) beside the box` for the framebuffer;
+- the spectrum moving with sound;
+- a USB microphone switching over.
+
+If the screen stalls between frames, the drawing thread is computing a
+long time between host calls, with interrupts held off (u-feckless-0017).

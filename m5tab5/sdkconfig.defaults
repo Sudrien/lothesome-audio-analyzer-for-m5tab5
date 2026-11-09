@@ -57,3 +57,11 @@ CONFIG_USB_HOST_HW_BUFFER_BIAS_PERIODIC_OUT=y
 # PSRAM examples have it.
 CONFIG_ELF_LOADER_LOAD_PSRAM=y
 CONFIG_ESP_SYSTEM_MEMPROT_FEATURE=n
+
+# u-lothesome-0001: the analyzer runs in a box (feckless_umode, feckless-libs'
+# umode branch). ESP-IDF's region protection programs the PMP and locks every
+# entry, one giving user mode read and write over internal DRAM, so no box
+# could be granted; off, the PMP is left in its reset state and the box is
+# granted alone. feckless_umode stops the configure if this is on.
+# rm sdkconfig.
+CONFIG_BOOTLOADER_REGION_PROTECTION_ENABLE=n

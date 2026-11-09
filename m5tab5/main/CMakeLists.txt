@@ -11,6 +11,7 @@ if(_lothesome_elf)
                  feckless_libversions   # 0050: libversions.h; nothing linked
                  esp-dsp esp_timer
                  esp_app_format   # 0005: esp_app_get_description()
+                 feckless_box_libc   # u-lothesome-0001: linked into the ELF
     )
     return()
 endif()
@@ -18,6 +19,7 @@ endif()
 idf_component_register(
     SRCS "standalone.c"
     PRIV_REQUIRES feckless_abi
+                  feckless_umode feckless_box_calls   # u-lothesome-0001: the box
 )
 
 if(NOT CMAKE_BUILD_EARLY_EXPANSION)

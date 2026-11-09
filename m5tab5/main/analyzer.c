@@ -41,6 +41,7 @@
 
 #include "audio_out.h"
 #include "feckless_abi.h"  /* 0039 */
+#include "feckless_box.h"  /* u-lothesome-0001 */
 #include "gfx.h"
 #include "lcd.h"
 #include "tab5io.h"
@@ -1179,6 +1180,7 @@ static void draw_fps(float fps)
 void app_main(void)
 {
     feckless_abi_require();     /* 0039: ties the ELF to the launcher's ABI */
+    feckless_abi_require_box(); /* u-lothesome-0001: and to a box */
 
     /*
      * 0005: the line to start copying from, as the player has it.

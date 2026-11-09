@@ -67,7 +67,10 @@ foreach(_c IN LISTS _comps)
         set(ELF_COMPONENTS "${_c}")
     endif()
 endforeach()
-feckless_abi_elf(lothesome_analyzer)
+# u-lothesome-0001: for a box (feckless-libs' umode branch): the pure part of
+# libc, its float maths and heap_caps linked into the ELF, and a check that it
+# imports none of it.
+feckless_abi_box_elf(lothesome_analyzer)
 
 # 0036: libversions.h, which analyzer.c includes. Moved here from the
 # top-level CMakeLists.txt with analyzer.c. 0050: written by feckless-libs'
