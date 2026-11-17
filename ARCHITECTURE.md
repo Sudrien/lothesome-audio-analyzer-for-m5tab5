@@ -1288,3 +1288,24 @@ by them. The drawing gets core 1 to itself.
 
 *Expected:* the FFT back to about 2.7 ms and near 48 FPS, with no
 cyan. *Not checked:* a board.
+
+### u-lothesome-0006 -- the manifest names feckless_nvs_handler
+
+feckless_box_calls requires `feckless_nvs_handler` by name since
+u-feckless-0053 (a boxed app's NVS), and a sibling required by name is
+fetched only if the app's manifest names it. The committed lock records
+feckless-libs at 422cef0, before that, so the analyzer builds today; the
+next build that re-resolves the lock would stop at the configure with
+
+    Failed to resolve component 'feckless_nvs_handler' required by component
+    'feckless_box_calls': unknown name.
+
+as Errant's did (its u-errant-0006). `main/idf_component.yml` names it,
+beside the storage components 0002 added for the same reason. The
+analyzer keeps nothing in NVS.
+
+*Checked:* ESP-IDF 6.1.1, component manager off, given only the feckless
+components the manifest names, against feckless-libs' umode branch at
+cfa96c9: without the entry the error above; with it the ELF passes both
+checks and the .bin links. *Not checked:* a build with the component
+manager, which writes the lock; a board.
