@@ -1309,3 +1309,28 @@ components the manifest names, against feckless-libs' umode branch at
 cfa96c9: without the entry the error above; with it the ELF passes both
 checks and the .bin links. *Not checked:* a build with the component
 manager, which writes the lock; a board.
+
+### u-lothesome-0007 -- the ELF's ExternalProject names its install prefix
+
+CMake 4.5 warns at every configure (policy CMP0225, new in 4.5):
+
+    ExternalProject_Add(lothesome_elf) uses the default configure command
+    without a CMAKE_INSTALL_PREFIX.
+
+Unset, the policy keeps the old behaviour: the ELF's configure gets no
+prefix, so CMake's default, `/usr/local`. Set NEW, it gets
+`<INSTALL_DIR>`, the place in the build tree ExternalProject keeps for
+it. `main/CMakeLists.txt` now passes `-DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>`
+itself; ExternalProject warns only when the caller names no prefix, so
+it is quiet, and every CMake from 3.16 up does the same thing. Nothing is
+installed (`INSTALL_COMMAND ""`), so the only change is the prefix
+itself, which also goes on the ELF build's `find_*()` search path: an
+empty directory.
+
+*Checked:* the condition read from CMake's current ExternalProject.cmake
+(the warning is given only when no CMAKE_INSTALL_PREFIX is in the
+arguments); a clean ESP-IDF 6.1.1 build with CMake 3.28, component
+manager off, the ELF build's cache showing
+`CMAKE_INSTALL_PREFIX=.../esp-idf/main/lothesome_elf-prefix`, its output as
+before. *Not checked:* CMake 4.5 itself, which the session has no copy
+of (4.4.5 is the newest it can install); a board.

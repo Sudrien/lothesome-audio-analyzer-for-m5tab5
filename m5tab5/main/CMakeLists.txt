@@ -43,6 +43,10 @@ if(NOT CMAKE_BUILD_EARLY_EXPANSION)
                    -DSDKCONFIG=${_elf_dir}/sdkconfig
                    -DLOTHESOME_HOST_SDKCONFIG=${_sdkconfig}
                    -DLOTHESOME_PROJECT_VER=${_project_ver}   # 0046
+                   # u-lothesome-0007: what CMake 4.5 passes by itself (policy
+                   # CMP0225), given here so it does not warn and every
+                   # CMake does the same. Nothing is installed.
+                   -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
         CMAKE_GENERATOR "Unix Makefiles"
         BUILD_COMMAND make elf
         BUILD_ALWAYS 1
