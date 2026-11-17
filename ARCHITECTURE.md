@@ -1363,3 +1363,14 @@ bootloader's ExternalProject call, and `CMAKE_POLICY_DEFAULT_CMP0168` set
 before project.cmake makes it NEW there. Then the change itself: every
 project configures with CMake 3.28 and 4.4 without warnings, and the
 firmware builds as before. *Not checked:* CMake 4.5; a board.
+
+### u-lothesome-0009 -- the ELF beside the .bin
+
+`main/CMakeLists.txt` copies the ELF from `build/elf/` to
+`build/lothesome_analyzer.app.elf`, beside the .bin, as Errant's and
+Spurious's builds do: one build, and the two files it makes side by side.
+Nothing else changes.
+
+*Checked:* a clean ESP-IDF 6.1.1 build, component manager off, against
+feckless-libs at cfa96c9: the ELF passes both checks (53 imports), the
+.bin links with no warnings, and the copy is byte for byte the ELF.

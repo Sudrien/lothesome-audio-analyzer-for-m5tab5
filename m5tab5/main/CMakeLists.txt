@@ -58,6 +58,13 @@ if(NOT CMAKE_BUILD_EARLY_EXPANSION)
     # waits for that.
     add_dependencies(${COMPONENT_LIB} lothesome_elf)
 
+    # u-lothesome-0009: and a copy beside the .bin,
+    # build/lothesome_analyzer.app.elf, the file a launcher is given, as
+    # Errant's and Spurious's builds have it.
+    add_custom_command(TARGET lothesome_elf POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${_elf}" "${_build_dir}/lothesome_analyzer.app.elf"
+        VERBATIM)
+
     # elf_loader's: 4-byte aligned, as esp_elf_relocate() wants it.
     elf_embed_aligned_binary(${COMPONENT_LIB} "${_elf}" BINARY)
 endif()
